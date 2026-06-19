@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<!--
+  Claude-Rex — standalone test harness
+  ------------------------------------------------------------------
+  Open this file in any browser to develop and play the dino game with
+  ZERO cost and ZERO API tokens. It loads the exact same ide-payload.js
+  that gets injected into the Claude Code webview, and simulates the
+  "Claude is working" spinner row so the hijack path is exercised too.
+
+  Buttons:
+    Spawn spinner   -> injects a fake .spinnerRow_TEST (triggers the game)
+    Remove spinner  -> removes it (the game should self-destruct)
+
+  This mimics the editor's dark theme so the monochrome look matches.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Claude-Rex · test harness</title>
+  <style>
+    :root {
+      /* Stand-ins for the VS Code theme variables the payload reads. */
+      --vscode-editor-foreground: #e6e6e6;
+      --vscode-editor-background: #1e1e1e;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--vscode-editor-background);
+      color: var(--vscode-editor-foreground);
+      font-family: ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      padding: 32px 16px;
+      box-sizing: border-box;
+    }
+    h1 { font-size: 16px; font-weight: 600; opacity: 0.85; margin: 0; }
+    p  { font-size: 12px; opacity: 0.6; max-width: 460px; text-align: center; line-height: 1.5; }
+    .bar { display: flex; gap: 8px; }
+    button {
+      background: transparent;
+      color: var(--vscode-editor-foreground);
+      border: 1px solid currentColor;
+      border-radius: 4px;
+      padding: 6px 12px;
+      font: inherit;
+      font-size: 12px;
+      cursor: pointer;
+      opacity: 0.8;
+    }
+    button:hover { opacity: 1; }
+    /* The fake chat panel that the spinner row lives in. */
+    #panel {
+      width: 100%;
+      max-width: 460px;
+      border: 1px solid #444;
+      border-radius: 6px;
+      padding: 12px;
+      min-height: 60px;
+      box-sizing: border-box;
+    }
+    .msg { font-size: 13px; opacity: 0.7; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <h1>🦖 Claude-Rex — test harness</h1>
+  <p>
+    Press <b>Spawn spinner</b> to simulate Claude working. The dino game replaces
+    the spinner inline. Jump with <b>Space</b> / <b>↑</b> / click. Remove the
+    spinner to confirm the game self-destructs.
+  </p>
+  <div class="bar">
+    <button id="spawn">Spawn spinner</button>
+    <button id="remove">Remove spinner</button>
+  </div>
+
+  <div id="panel">
+    <div class="msg">&gt; Pretend Claude is thinking…</div>
+    <!-- Spinner rows get injected here by the buttons. -->
+  </div>
+
+  <!-- Load the real payload. -->
+  <script src="./ide-payload.js"></script>
+  <script>
+    (function () {
+      var panel = document.getElementById("panel");
+      var current = null;
+
+      document.getElementById("spawn").addEventListener("click", function () {
+        if (current && document.contains(current)) return;
+        // Build a row that matches the real selector ([class*="spinnerRow"]).
+        var row = document.createElement("div");
+        row.className = "spinnerRow_HARNESS";
+        row.style.cssText = "display:flex;align-items:center;min-height:1.85em;margin-top:4px;";
+        var dot = document.createElement("div");
+        dot.className = "spinner_HARNESS";
+        dot.textContent = "● working…";
+        row.appendChild(dot);
+        panel.appendChild(row);
+        // The payload's MutationObserver will detect and hijack it.
+        current = row;
+      });
+
+      document.getElementById("remove").addEventListener("click", function () {
+        if (current && current.parentNode) current.parentNode.removeChild(current);
+        current = null;
+      });
+    })();
+  </script>
+</body>
+</html>

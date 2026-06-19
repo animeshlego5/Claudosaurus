@@ -1,0 +1,52 @@
+{
+  "name": "claude-rex",
+  "version": "0.6.0",
+  "description": "Turn the Claude Code 'thinking' spinner into a playable, monochrome Chrome-style dinosaur game.",
+  "bin": {
+    "claude-rex": "cli.js"
+  },
+  "main": "lib/patch.js",
+  "files": [
+    "cli.js",
+    "install.js",
+    "uninstall.js",
+    "ide-payload.js",
+    "game.html",
+    "hang-server.js",
+    "lib/",
+    "README.md"
+  ],
+  "scripts": {
+    "patch": "node cli.js install",
+    "patch:all": "node cli.js install --all",
+    "patch:dry": "node cli.js install --dry-run",
+    "unpatch": "node cli.js uninstall",
+    "unpatch:all": "node cli.js uninstall --all"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "anthropic",
+    "antigravity",
+    "vscode",
+    "cursor",
+    "dino",
+    "dinosaur",
+    "game",
+    "spinner",
+    "loading"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YOUR_GITHUB_USERNAME/claude-rex.git"
+  },
+  "bugs": {
+    "url": "https://github.com/YOUR_GITHUB_USERNAME/claude-rex/issues"
+  },
+  "homepage": "https://github.com/YOUR_GITHUB_USERNAME/claude-rex#readme",
+  "dependencies": {}
+}
