@@ -1,4 +1,4 @@
-# 🦖 Claude-Rex
+# 🦖 Claudosaurus
 
 Turn Claude Code's idle wait into play time. While Claude is working, the little
 "thinking" spinner in the chat panel is replaced — **inline, in place** — with a
@@ -22,7 +22,7 @@ The Claude Code chat panel is a VS Code **webview**. Its UI bundle
 mounts only while Claude is busy — and that row also holds the permission /
 interrupt controls.
 
-Claude-Rex appends a small vanilla-JS payload to the **end** of that bundle:
+Claudosaurus appends a small vanilla-JS payload to the **end** of that bundle:
 
 - It runs in the same nonce-trusted context as the bundle, so **no CSP changes
   are needed** (nothing in `extension.js` is touched either).
@@ -41,7 +41,7 @@ matches your theme.
 
 | File | Role |
 |---|---|
-| `cli.js` | The `claude-rex` command (install / uninstall / --all / --dry-run). |
+| `cli.js` | The `claudosaurus` command (install / uninstall / --all / --dry-run). |
 | `ide-payload.js` | The injected game + spinner-hijack glue (single source of truth). |
 | `lib/patch.js` | Backup + idempotent inject/restore logic. |
 | `lib/locate.js` | Cross-editor / cross-platform extension finder. |
@@ -73,18 +73,18 @@ This loads the exact payload that gets injected, so it's a faithful preview.
 Anyone can install with **npx** — no clone, no global install:
 
 ```bash
-npx claude-rex            # patch the newest Claude Code extension
-npx claude-rex --all      # patch every editor copy found
-npx claude-rex --dry-run  # preview only, change nothing
-npx claude-rex uninstall  # restore the original
+npx claudosaurus            # patch the newest Claude Code extension
+npx claudosaurus --all      # patch every editor copy found
+npx claudosaurus --dry-run  # preview only, change nothing
+npx claudosaurus uninstall  # restore the original
 ```
 
 Or install the command globally:
 
 ```bash
-npm install -g claude-rex
-claude-rex                # patch
-claude-rex uninstall      # revert
+npm install -g claudosaurus
+claudosaurus                # patch
+claudosaurus uninstall      # revert
 ```
 
 From a local clone, the equivalent dev commands are `node cli.js install`
@@ -102,11 +102,11 @@ always rebuilds from the pristine `.bak`, so patches never stack.
 ## Uninstall
 
 ```bash
-npx claude-rex uninstall        # revert the newest extension
-npx claude-rex uninstall --all  # revert every copy
+npx claudosaurus uninstall        # revert the newest extension
+npx claudosaurus uninstall --all  # revert every copy
 ```
 
-It restores `webview/index.js` from the `.claude-rex-bak` backup and deletes the
+It restores `webview/index.js` from the `.claudosaurus-bak` backup and deletes the
 backup. If the backup is missing for some reason, it strips just the injected
 marker block instead. Reload the window afterward.
 
@@ -136,7 +136,7 @@ without burning API tokens:
    ```
 
    Send a message; Claude will appear to "work" forever (until you hit the
-   interrupt control, which Claude-Rex keeps visible) — plenty of time to play.
+   interrupt control, which Claudosaurus keeps visible) — plenty of time to play.
 
    You can also force the game on for debugging by appending `?claudeRexForce=1`
    to a webview URL, or by running `window.__claudeRex.spawnTest()` in the
@@ -148,7 +148,7 @@ without burning API tokens:
 
 - **Updates wipe the patch.** When the Claude Code extension auto-updates, it
   installs a fresh `webview/index.js` in a new version folder. Just run
-  `npx claude-rex` again.
+  `npx claudosaurus` again.
 - **Reload required.** The webview caches the old bundle until you reload the
   panel / window.
 - **It modifies a local copy of Anthropic's extension.** That's a personal mod
@@ -183,11 +183,11 @@ with `window.__claudeRex.setAlwaysOn(true)`.
 
 ## Publishing (maintainers)
 
-The package is plain Node — no build step. To ship it so others can `npx claude-rex`:
+The package is plain Node — no build step. To ship it so others can `npx claudosaurus`:
 
-1. **Pick a name.** Check availability: `npm view claude-rex`. If it's taken,
+1. **Pick a name.** Check availability: `npm view claudosaurus`. If it's taken,
    either choose another name or scope it to your account in `package.json`
-   (`"name": "@your-username/claude-rex"`).
+   (`"name": "@your-username/claudosaurus"`).
 2. **Set the repo URLs** in `package.json` (`repository`, `bugs`, `homepage`) —
    replace `YOUR_GITHUB_USERNAME`.
 3. **Preview the contents:** `npm pack --dry-run` (should list ~11 files, no
@@ -200,13 +200,13 @@ The package is plain Node — no build step. To ship it so others can `npx claud
    ```
    Bump `version` before each subsequent publish (npm rejects re-publishing the
    same version).
-5. Users then run **`npx claude-rex`** — done.
+5. Users then run **`npx claudosaurus`** — done.
 
 **No npm account?** Push to GitHub and people can run it straight from the repo:
 
 ```bash
-npx github:your-username/claude-rex
+npx github:your-username/claudosaurus
 ```
 
 > Note: there is no `postinstall` hook — installing the package never patches
-> anything automatically. The user must run `claude-rex` explicitly.
+> anything automatically. The user must run `claudosaurus` explicitly.
