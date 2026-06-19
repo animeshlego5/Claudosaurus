@@ -1,9 +1,9 @@
 {
-  "name": "claude-rex",
+  "name": "claudosaurus",
   "version": "0.9.0",
   "description": "Turn the Claude Code 'thinking' spinner into a playable, monochrome Chrome-style dinosaur game.",
   "bin": {
-    "claude-rex": "cli.js"
+    "claudosaurus": "cli.js"
   },
   "main": "lib/patch.js",
   "files": [
@@ -42,11 +42,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/YOUR_GITHUB_USERNAME/claude-rex.git"
+    "url": "git+https://github.com/animeshlego5/Claudosaurus.git"
   },
   "bugs": {
-    "url": "https://github.com/YOUR_GITHUB_USERNAME/claude-rex/issues"
+    "url": "https://github.com/animeshlego5/Claudosaurus/issues"
   },
-  "homepage": "https://github.com/YOUR_GITHUB_USERNAME/claude-rex#readme",
+  "homepage": "https://github.com/animeshlego5/Claudosaurus#readme",
   "dependencies": {}
 }

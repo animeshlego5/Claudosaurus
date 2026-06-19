@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  Claude-Rex — standalone test harness
+  Claudosaurus — standalone test harness
   ------------------------------------------------------------------
   Open this file in any browser to develop and play the dino game with
   ZERO cost and ZERO API tokens. It loads the exact same ide-payload.js
@@ -17,7 +17,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Claude-Rex · test harness</title>
+  <title>Claudosaurus · test harness</title>
   <style>
     :root {
       /* Stand-ins for the VS Code theme variables the payload reads. */
@@ -71,7 +71,7 @@
   </style>
 </head>
 <body>
-  <h1>🦖 Claude-Rex — test harness</h1>
+  <h1>🦖 Claudosaurus — test harness</h1>
   <p>
     Press <b>Spawn spinner</b> to simulate Claude working. The dino game replaces
     the spinner inline. Jump with <b>Space</b> / <b>↑</b> / click. Press <b>?</b>
@@ -140,7 +140,7 @@
       // (so the row is no longer "busy") and show a prompt the payload holds on.
       document.getElementById("permission").addEventListener("click", function () {
         if (!current) return;
-        window.__claudeRex.config.pauseSelector = ".harness-perm";
+        window.__claudosaurus.config.pauseSelector = ".harness-perm";
         var dot = current.querySelector(".busyDot");
         if (dot) dot.parentNode.removeChild(dot);
         if (!panel.querySelector(".harness-perm")) {
@@ -161,7 +161,7 @@
 
       // Drop the bird threshold so pterodactyls appear right away for testing.
       document.getElementById("birds").addEventListener("click", function () {
-        window.__claudeRex.config.birdMinScore = 0;
+        window.__claudosaurus.config.birdMinScore = 0;
       });
 
       // Track which button is active within a group.
@@ -174,19 +174,19 @@
       // Option presets — exercise the same public API users would call.
       document.querySelectorAll("[data-speed]").forEach(function (b) {
         b.addEventListener("click", function () {
-          window.__claudeRex.setSpeed(b.dataset.speed);
+          window.__claudosaurus.setSpeed(b.dataset.speed);
           setActive("speed", b.dataset.speed);
         });
       });
       document.querySelectorAll("[data-jump]").forEach(function (b) {
         b.addEventListener("click", function () {
-          window.__claudeRex.setJump(b.dataset.jump);
+          window.__claudosaurus.setJump(b.dataset.jump);
           setActive("jump", b.dataset.jump);
         });
       });
       document.querySelectorAll("[data-theme]").forEach(function (b) {
         b.addEventListener("click", function () {
-          window.__claudeRex.setTheme(b.dataset.theme);
+          window.__claudosaurus.setTheme(b.dataset.theme);
           setActive("theme", b.dataset.theme);
         });
       });
@@ -194,7 +194,7 @@
       var scanlinesBtn = document.getElementById("scanlines");
       scanlinesBtn.addEventListener("click", function () {
         scan = !scan;
-        window.__claudeRex.setScanlines(scan);
+        window.__claudosaurus.setScanlines(scan);
         scanlinesBtn.classList.toggle("active", scan);
       });
 

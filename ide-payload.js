@@ -1,5 +1,5 @@
 /*
- * Claude-Rex — injected webview payload
+ * Claudosaurus — injected webview payload
  * ------------------------------------------------------------------
  * Appended (wrapped in marker comments) to the Claude Code extension's
  * `webview/index.js` by install.js. Runs inside the chat-panel webview,
@@ -18,7 +18,7 @@
  *   - Obstacles are cacti plus, past a score threshold, pterodactyls. There is
  *     no ducking: low/mid birds must be jumped, high birds fly over a grounded
  *     dino — so the right move is sometimes to do nothing.
- *   - Opt-in "always on" mode (window.__claudeRex.setAlwaysOn(true))
+ *   - Opt-in "always on" mode (window.__claudosaurus.setAlwaysOn(true))
  *     keeps the game up even when idle, for people who want free play.
  *   - The dino is drawn in the spinner's own colour, sampled live, so it
  *     matches the theme exactly. Strictly monochrome.
@@ -34,8 +34,8 @@
 
   if (typeof window === "undefined") return;
   // Idempotent (re)load: tear down any previous instance first.
-  if (window.__claudeRex && typeof window.__claudeRex.__destroy === "function") {
-    try { window.__claudeRex.__destroy(); } catch (e) {}
+  if (window.__claudosaurus && typeof window.__claudosaurus.__destroy === "function") {
+    try { window.__claudosaurus.__destroy(); } catch (e) {}
   }
 
   // ----------------------------------------------------------------
@@ -333,7 +333,7 @@
     var paused = false;
     var helpMode = false;
     var baseH = H;           // the normal strip height; help mode grows past it
-    var HELP_H = 176;        // taller canvas while the cheatsheet is open
+    var HELP_H = 190;        // taller canvas while the cheatsheet is open
 
     function readHi() {
       try { return parseInt(localStorage.getItem(CONFIG.hiScoreKey) || "0", 10) || 0; }
@@ -538,17 +538,19 @@
     // change settings, since the inline strip is too small for buttons. Each
     // entry is [text, indent]; a null is a blank spacer line.
     var HELP_LINES = [
-      ["CLAUDE-REX · settings", 0],
+      ["CLAUDOSAURUS · settings", 0],
       ["run these in the webview devtools console:", 0],
       [null, 0],
-      ["__claudeRex.setTheme('day'|'night'|'auto')", 1],
-      ["__claudeRex.setSpeed('slow'|'normal'|'fast')", 1],
-      ["__claudeRex.setJump('floaty'|'normal'|'snappy')", 1],
-      ["__claudeRex.setScanlines(true|false)", 1],
-      ["__claudeRex.setOptions({ gravity:0.5, ... })", 1],
-      ["__claudeRex.resetOptions()", 1],
+      ["__claudosaurus.setTheme('day'|'night'|'auto')", 1],
+      ["__claudosaurus.setSpeed('slow'|'normal'|'fast')", 1],
+      ["__claudosaurus.setJump('floaty'|'normal'|'snappy')", 1],
+      ["__claudosaurus.setScanlines(true|false)", 1],
+      ["__claudosaurus.setOptions({ gravity:0.5, ... })", 1],
+      ["__claudosaurus.resetOptions()", 1],
       [null, 0],
-      ["space / ↑ / tap = jump    ? = close", 0]
+      ["space / ↑ / tap = jump    ? = close", 0],
+      [null, 0],
+      ["github.com/animeshlego5/Claudosaurus", 0]
     ];
 
     function renderHelp() {
@@ -606,7 +608,7 @@
       for (var i = 0; i < obstacles.length; i++) drawObstacle(obstacles[i]);
       drawHud();
       if (paused && state === STATE.RUNNING) drawCenter("paused", "resumes when Claude continues");
-      else if (state === STATE.READY) drawCenter("CLAUDE-REX", "press space / tap to run");
+      else if (state === STATE.READY) drawCenter("CLAUDOSAURUS", "press space / tap to run");
       else if (state === STATE.OVER) drawCenter("game over · " + pad(score), "space / tap to retry");
       drawScanlines();
     }
@@ -831,7 +833,7 @@
     row.style.alignItems = "stretch";
 
     var host = document.createElement("div");
-    host.className = "claude-rex-host";
+    host.className = "claudosaurus-host";
     host.style.width = "100%";
     host.style.margin = "2px 0";
 
@@ -927,7 +929,7 @@
     var key = c + "|" + anim;
     if (seenDbg[key]) return;
     seenDbg[key] = 1;
-    console.log("[claude-rex] candidate:", el.tagName, JSON.stringify(c), "anim=" + anim);
+    console.log("[claudosaurus] candidate:", el.tagName, JSON.stringify(c), "anim=" + anim);
   }
   function debugScan(node) {
     if (!CONFIG.debug || !node || node.nodeType !== 1) return;
@@ -960,7 +962,7 @@
 
   function removeGames(includeTestRows) {
     if (active) endGame();
-    var hosts = document.querySelectorAll(".claude-rex-host");
+    var hosts = document.querySelectorAll(".claudosaurus-host");
     for (var i = 0; i < hosts.length; i++) {
       var h = hosts[i];
       if (h.__game) { try { h.__game.teardown(); } catch (e) {} }
@@ -1030,7 +1032,7 @@
   // ----------------------------------------------------------------
   // Public API + bootstrap.
   // ----------------------------------------------------------------
-  window.__claudeRex = {
+  window.__claudosaurus = {
     version: "0.9.0",
     config: CONFIG,
     DinoGame: DinoGame,
@@ -1098,7 +1100,7 @@
       for (var i = 0; i < rows.length; i++) {
         if (rowBusy(rows[i])) { busy++; if (!sample) sample = colorSourceIn(rows[i]); }
       }
-      console.log("[claude-rex] spinnerRow matches:", rows.length,
+      console.log("[claudosaurus] spinnerRow matches:", rows.length,
         "| busy rows:", busy,
         "| freeze:", shouldFreeze(), "| promptUp:", promptUp(),
         "| permBtns:", permissionButtonsUp(), "| hold:", shouldHold(),
@@ -1109,15 +1111,17 @@
       return { rows: rows.length, busy: busy, freeze: shouldFreeze(), promptUp: promptUp() };
     }
   };
+  // Backward-compat alias so any existing console snippets still work.
+  window.__claudeRex = window.__claudosaurus;
 
   function boot() {
     try {
       loadOptions(); // restore the user's saved difficulty/theme tweaks
-      console.log("[claude-rex] v" + window.__claudeRex.version + " running @ " + location.href);
+      console.log("[claudosaurus] v" + window.__claudosaurus.version + " running @ " + location.href);
       startObserver();
-      if (/[?&]claudeRexForce=1/.test(location.search)) window.__claudeRex.spawnTest();
+      if (/[?&]claudeRexForce=1/.test(location.search)) window.__claudosaurus.spawnTest();
     } catch (e) {
-      try { console.warn("[claude-rex] failed to start:", e); } catch (_) {}
+      try { console.warn("[claudosaurus] failed to start:", e); } catch (_) {}
     }
   }
 

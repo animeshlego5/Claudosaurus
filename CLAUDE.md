@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-`claude-rex` (npm name; repo folder is `Claudosaurus`) is a zero-dependency Node CLI that patches a **local copy** of the installed Claude Code editor extension so its "thinking" spinner becomes a playable Chrome-style dino game. There is **no build step, no test suite, and no runtime dependencies** — it is plain ES2019 across two distinct execution contexts (see below).
+`claudosaurus` is a zero-dependency Node CLI that patches a **local copy** of the installed Claude Code editor extension so its "thinking" spinner becomes a playable Chrome-style dino game. There is **no build step, no test suite, and no runtime dependencies** — it is plain ES2019 across two distinct execution contexts (see below).
 
 ## Commands
 
@@ -21,7 +21,7 @@ After patching you must **reload the editor window** (Command Palette → "Devel
 ### Iterating without spending API tokens
 - `start game.html` (Windows; `open`/`xdg-open` elsewhere) loads the real `ide-payload.js` in a browser with a simulated spinner row — the primary dev loop for the game itself.
 - `node hang-server.js` starts a "black hole" HTTP server on :8787 that never responds; launch the editor with `ANTHROPIC_BASE_URL=http://localhost:8787` to keep the live spinner up indefinitely.
-- In the webview devtools console: `window.__claudeRex.spawnTest()` forces a fake busy spinner, `.diagnose()` reports what the detector sees, `.setAlwaysOn(true)` enables free play. Appending `?claudeRexForce=1` to the webview URL auto-spawns a test spinner.
+- In the webview devtools console: `window.__claudosaurus.spawnTest()` forces a fake busy spinner, `.diagnose()` reports what the detector sees, `.setAlwaysOn(true)` enables free play. Appending `?claudeRexForce=1` to the webview URL auto-spawns a test spinner. (`window.__claudeRex` also works as a backward-compat alias.)
 
 ## Architecture
 
@@ -43,5 +43,5 @@ Three pieces, one data flow — **locate → patch → inject**:
 - **`ide-payload.js` is browser code, not Node.** No `require`, no Node globals — it must run identically when injected into the webview and when `<script>`-loaded by `game.html`.
 - **Editing the injected payload requires re-patching** (`node cli.js install`) and reloading the window; the live webview caches the old bundle. Editing `game.html`'s copy path just needs a browser refresh.
 - **Selector drift is the main maintenance risk.** If an extension update breaks detection, the selectors to adjust are `CONFIG.spinnerRowSelector` / `CONFIG.busyContentSelector` at the top of `ide-payload.js`. Set `CONFIG.debug = true` to log spinner-candidate elements while tuning.
-- **Bump `version`** in both `package.json` and the `window.__claudeRex.version` / boot log string in `ide-payload.js` when releasing.
-- `package.json` ships placeholder `YOUR_GITHUB_USERNAME` repo URLs — real values needed before publishing.
+- **Bump `version`** in both `package.json` and the `window.__claudosaurus.version` / boot log string in `ide-payload.js` when releasing.
+- `package.json` now has the real GitHub URLs pointing to `animeshlego5/Claudosaurus`.

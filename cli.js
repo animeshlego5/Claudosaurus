@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /*
- * Claude-Rex CLI — single entry point.
- *   claude-rex            patch the newest Claude Code extension (default)
- *   claude-rex install    same as above
- *   claude-rex uninstall  restore the original
- *   claude-rex --all      apply to every editor copy found
- *   claude-rex --dry-run  preview only, change nothing
- *   claude-rex --version | --help
+ * Claudosaurus CLI — single entry point.
+ *   claudosaurus            patch the newest Claude Code extension (default)
+ *   claudosaurus install    same as above
+ *   claudosaurus uninstall  restore the original
+ *   claudosaurus --all      apply to every editor copy found
+ *   claudosaurus --dry-run  preview only, change nothing
+ *   claudosaurus --version | --help
  */
 "use strict";
 
@@ -19,11 +19,11 @@ const opts = { all: flag("--all"), dryRun: flag("--dry-run") };
 
 function help() {
   process.stdout.write([
-    "claude-rex — turn the Claude Code \"thinking\" spinner into a dino game 🦖",
+    "claudosaurus — turn the Claude Code \"thinking\" spinner into a dino game 🦖",
     "",
     "Usage:",
-    "  claude-rex [install]      patch the newest Claude Code extension",
-    "  claude-rex uninstall      restore the original bundle",
+    "  claudosaurus [install]      patch the newest Claude Code extension",
+    "  claudosaurus uninstall      restore the original bundle",
     "",
     "Options:",
     "  --all                     apply to every editor copy found (VS Code, Cursor, Antigravity, …)",
@@ -32,7 +32,7 @@ function help() {
     "  -v, --version             print version",
     "",
     "After patching, reload your editor: Command Palette → \"Developer: Reload Window\".",
-    "The patch is replaced when the extension updates — just run claude-rex again.",
+    "The patch is replaced when the extension updates — just run claudosaurus again.",
     ""
   ].join("\n"));
 }
