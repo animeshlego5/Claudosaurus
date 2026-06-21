@@ -35,7 +35,7 @@
   if (typeof window === "undefined") return;
   // Idempotent (re)load: tear down any previous instance first.
   if (window.__claudosaurus && typeof window.__claudosaurus.__destroy === "function") {
-    try { window.__claudosaurus.__destroy(); } catch (e) {}
+    try { window.__claudosaurus.__destroy(); } catch (e) { }
   }
 
   // ----------------------------------------------------------------
@@ -87,9 +87,9 @@
     // a small CONSTANT acceleration every frame (not the old runaway curve), so
     // it stays fair far longer. Values are scaled to this strip's size. Presets
     // (setSpeed/setJump below) just bundle these.
-    startSpeed: 3.0,       // px/frame at the start (Chrome: 6 on a 2x-taller canvas)
-    maxSpeed: 8.5,         // px/frame cap (Chrome: 13)
-    acceleration: 0.001,   // px/frame added each frame (Chrome: 0.001)
+    startSpeed: 4.0,       // px/frame at the start (Chrome: 6 on a 2x-taller canvas)
+    maxSpeed: 11.0,        // px/frame cap (Chrome: 13)
+    acceleration: 0.0016,  // px/frame added each frame (Chrome: 0.001)
     gravity: 0.62,         // downward pull per frame (Chrome: 0.6)
     jumpVelocity: -7.6,    // upward kick on jump (Chrome: -12 on its scale)
 
@@ -245,10 +245,10 @@
     try {
       var cs = getComputedStyle(document.body || document.documentElement);
       var v = cs.getPropertyValue("--vscode-icon-foreground") ||
-              cs.getPropertyValue("--vscode-editor-foreground");
+        cs.getPropertyValue("--vscode-editor-foreground");
       if (v && v.trim()) return v.trim();
       if (cs.color) return cs.color;
-    } catch (e) {}
+    } catch (e) { }
     return "#8a8a8a";
   }
   // The editor background, used as the "ink" colour in inverted (night) mode.
@@ -256,10 +256,10 @@
     try {
       var cs = getComputedStyle(document.body || document.documentElement);
       var v = cs.getPropertyValue("--vscode-editor-background") ||
-              cs.getPropertyValue("--vscode-sideBar-background");
+        cs.getPropertyValue("--vscode-sideBar-background");
       if (v && v.trim()) return v.trim();
       if (cs.backgroundColor && !isTransparent(cs.backgroundColor)) return cs.backgroundColor;
-    } catch (e) {}
+    } catch (e) { }
     return "#1e1e1e";
   }
   function isTransparent(c) {
@@ -272,9 +272,9 @@
     try {
       var cs = getComputedStyle(el);
       var cands = [cs.borderRightColor, cs.borderBottomColor, cs.borderLeftColor,
-                   cs.borderTopColor, cs.color, cs.backgroundColor];
+      cs.borderTopColor, cs.color, cs.backgroundColor];
       for (var i = 0; i < cands.length; i++) if (!isTransparent(cands[i])) return cands[i];
-    } catch (e) {}
+    } catch (e) { }
     return null;
   }
 
@@ -305,7 +305,7 @@
           return parseInt(m[1], 16) * 0.299 + parseInt(m[2], 16) * 0.587 + parseInt(m[3], 16) * 0.114;
         if ((m = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(s)))
           return (+m[1]) * 0.299 + (+m[2]) * 0.587 + (+m[3]) * 0.114;
-      } catch (e) {}
+      } catch (e) { }
       return 128;
     }
     var fgBright = luma(fg) >= luma(bg);
@@ -314,6 +314,7 @@
     color = fg;
 
     var STATE = { READY: 0, RUNNING: 1, OVER: 2 };
+    var resumeCountdown = 0;
 
     var dino = { x: 22, w: DINO_W, h: DINO_H, y: GROUND - DINO_H, vy: 0, onGround: true };
 
@@ -339,7 +340,7 @@
       try { return parseInt(localStorage.getItem(CONFIG.hiScoreKey) || "0", 10) || 0; }
       catch (e) { return 0; }
     }
-    function writeHi(v) { try { localStorage.setItem(CONFIG.hiScoreKey, String(v)); } catch (e) {} }
+    function writeHi(v) { try { localStorage.setItem(CONFIG.hiScoreKey, String(v)); } catch (e) { } }
 
     function reset() {
       obstacles = [];
@@ -534,58 +535,158 @@
       return { ink: fg, fill: null }; // auto: match the editor
     }
 
-    // The cheatsheet shown when you press "?" — the console commands that
-    // change settings, since the inline strip is too small for buttons. Each
-    // entry is [text, indent]; a null is a blank spacer line.
-    var HELP_LINES = [
-      ["CLAUDOSAURUS · settings", 0],
-      ["run these in the webview devtools console:", 0],
-      [null, 0],
-      ["__claudosaurus.setTheme('day'|'night'|'auto')", 1],
-      ["__claudosaurus.setSpeed('slow'|'normal'|'fast')", 1],
-      ["__claudosaurus.setJump('floaty'|'normal'|'snappy')", 1],
-      ["__claudosaurus.setScanlines(true|false)", 1],
-      ["__claudosaurus.setOptions({ gravity:0.5, ... })", 1],
-      ["__claudosaurus.resetOptions()", 1],
-      [null, 0],
-      ["space / ↑ / tap = jump    ? = close", 0],
-      [null, 0],
-      ["github.com/animeshlego5/Claudosaurus", 0]
-    ];
+    var modal = null;
+    function buildSettingsModal() {
+      var speedName = "normal";
+      for (var k in SPEED_PRESETS) if (CONFIG.startSpeed === SPEED_PRESETS[k].startSpeed) speedName = k;
+      var jumpName = "normal";
+      for (var j in JUMP_PRESETS) if (CONFIG.gravity === JUMP_PRESETS[j].gravity) jumpName = j;
 
-    function renderHelp() {
-      ctx.fillStyle = color;
-      ctx.textBaseline = "top";
-      ctx.textAlign = "left";
-      var x = 10, y = 8, lh = 14;
-      for (var i = 0; i < HELP_LINES.length; i++) {
-        var line = HELP_LINES[i][0];
-        if (line === null) { y += lh * 0.5; continue; }
-        var indent = HELP_LINES[i][1];
-        ctx.globalAlpha = i === 0 ? 0.95 : indent ? 0.8 : 0.55;
-        ctx.font = (i === 0 ? '12px ' : indent ? '11px ' : '10px ') +
-          'ui-monospace, Menlo, Consolas, monospace';
-        ctx.fillText(line, x + indent * 10, y);
-        y += lh;
+      var div = document.createElement("div");
+      div.style.cssText = "position:absolute; inset:0; background:rgba(10,10,10,0.92); color:#e0e0e0; z-index:10; display:flex; flex-direction:column; padding: 8px 12px 4px; font-family: ui-monospace, monospace; font-size: 11px; box-sizing: border-box; overflow-y: auto; backdrop-filter: blur(4px);";
+
+      // Detect if we have enough width for two columns.
+      var hostW = canvas.parentNode ? canvas.parentNode.clientWidth : W;
+      var wide = hostW >= 360;
+
+      var selectStyle = "background:#2a2a2a; color:#e0e0e0; border:1px solid #444; padding:2px 6px; border-radius:4px; outline:none; cursor:pointer; font-size:11px; font-family:inherit; width:68px;";
+      // Compact: label and control sit close together with a small gap.
+      var rowStyle = "display:flex; align-items:center; gap:8px;";
+      // The label floats left, the control hugs it (no space-between stretch).
+      var labelStyle = "opacity:0.75; white-space:nowrap; min-width:58px;";
+
+      // Build the four settings rows as individual HTML strings.
+      var themeRow =
+        '<div style="' + rowStyle + '">' +
+        '<span style="' + labelStyle + '">Theme</span>' +
+        '<select id="cr-theme" style="' + selectStyle + '">' +
+        '<option value="auto" ' + (CONFIG.theme === 'auto' ? 'selected' : '') + '>Auto</option>' +
+        '<option value="day" ' + (CONFIG.theme === 'day' ? 'selected' : '') + '>Day</option>' +
+        '<option value="night" ' + (CONFIG.theme === 'night' ? 'selected' : '') + '>Night</option>' +
+        '</select>' +
+        '</div>';
+
+      var speedRow =
+        '<div style="' + rowStyle + '">' +
+        '<span style="' + labelStyle + '">Speed</span>' +
+        '<select id="cr-speed" style="' + selectStyle + '">' +
+        '<option value="slow" ' + (speedName === 'slow' ? 'selected' : '') + '>Slow</option>' +
+        '<option value="normal" ' + (speedName === 'normal' ? 'selected' : '') + '>Normal</option>' +
+        '<option value="fast" ' + (speedName === 'fast' ? 'selected' : '') + '>Fast</option>' +
+        '</select>' +
+        '</div>';
+
+      var jumpRow =
+        '<div style="' + rowStyle + '">' +
+        '<span style="' + labelStyle + '">Jump</span>' +
+        '<select id="cr-jump" style="' + selectStyle + '">' +
+        '<option value="floaty" ' + (jumpName === 'floaty' ? 'selected' : '') + '>Floaty</option>' +
+        '<option value="normal" ' + (jumpName === 'normal' ? 'selected' : '') + '>Normal</option>' +
+        '<option value="snappy" ' + (jumpName === 'snappy' ? 'selected' : '') + '>Snappy</option>' +
+        '</select>' +
+        '</div>';
+
+      var toggleBg = CONFIG.scanlines ? '#666' : '#333';
+      var toggleDot = CONFIG.scanlines ? 'translateX(12px)' : 'translateX(0)';
+      var scanlinesRow =
+        '<div style="' + rowStyle + '">' +
+        '<span style="' + labelStyle + '">Scanlines</span>' +
+        '<div style="width:68px; display:flex; align-items:center;">' +
+        '<label id="cr-scanlines" style="display:inline-block; width:26px; height:14px; background:' + toggleBg + '; border-radius:7px; position:relative; cursor:pointer; transition:background .2s; flex-shrink:0;">' +
+        '<span style="position:absolute; top:2px; left:2px; width:10px; height:10px; background:#e0e0e0; border-radius:50%; transition:transform .2s; transform:' + toggleDot + ';"></span>' +
+        '</label>' +
+        '</div>' +
+        '</div>';
+
+      var separator = '<div style="border-top:1px solid #333; margin:1px 0;"></div>';
+      var btnBase = "flex:1; color:#e0e0e0; border:1px solid #555; padding:3px 0; cursor:pointer; border-radius:4px; font-weight:600; font-size:11px; font-family:inherit; transition:background .15s, border-color .15s;";
+
+      var settingsBody;
+      if (wide) {
+        // Two-column grid: left = Theme + Speed, right = Jump + Scanlines.
+        settingsBody =
+          '<div style="display:grid; grid-template-columns:1fr 1fr; column-gap:24px; row-gap:4px;">' +
+          themeRow + jumpRow + speedRow + scanlinesRow +
+          '</div>';
+      } else {
+        // Narrow: single-column stack.
+        settingsBody =
+          '<div style="display:flex; flex-direction:column; gap:4px;">' +
+          themeRow + speedRow + jumpRow + scanlinesRow +
+          '</div>';
       }
-      ctx.globalAlpha = 1;
+
+      div.innerHTML =
+        // Header.
+        '<div style="display:flex; justify-content:center; align-items:center; padding-bottom:1px; position:relative;">' +
+        '<span style="font-size:11px; font-weight:700; letter-spacing:0.5px; line-height:1;">CLAUDOSAURUS</span>' +
+        '<span style="cursor:pointer; opacity:0.5; padding:0 2px; font-size:11px; line-height:1; transition:opacity .15s; position:absolute; right:0; top:4px;" id="cr-close">✖</span>' +
+        '</div>' +
+        // Settings body.
+        '<div style="padding:2px 0;">' + settingsBody + '</div>' +
+        // Footer buttons.
+        '<div style="display:flex; gap:8px; padding-top:2px;">' +
+        '<button id="cr-reset" style="' + btnBase + ' background:#2a2a2a;">Reset</button>' +
+        '<button id="cr-github" style="' + btnBase + ' background:#2a2a2a;">GitHub</button>' +
+        '</div>';
+
+      // Wire up event handlers.
+      div.querySelector('#cr-close').onclick = function () { setHelp(false); };
+      div.querySelector('#cr-close').onmouseenter = function () { this.style.opacity = '1'; };
+      div.querySelector('#cr-close').onmouseleave = function () { this.style.opacity = '0.5'; };
+      div.querySelector('#cr-theme').onchange = function (e) { window.__claudosaurus.setTheme(e.target.value); };
+      div.querySelector('#cr-speed').onchange = function (e) { window.__claudosaurus.setSpeed(e.target.value); };
+      div.querySelector('#cr-jump').onchange = function (e) { window.__claudosaurus.setJump(e.target.value); };
+      div.querySelector('#cr-scanlines').onclick = function () { var on = !CONFIG.scanlines; window.__claudosaurus.setScanlines(on); this.style.background = on ? '#666' : '#333'; this.querySelector('span').style.transform = on ? 'translateX(12px)' : 'translateX(0)'; };
+
+      // Button hover effects.
+      var btns = div.querySelectorAll('button');
+      for (var b = 0; b < btns.length; b++) {
+        btns[b].onmouseenter = function () { this.style.background = '#3a3a3a'; this.style.borderColor = '#777'; };
+        btns[b].onmouseleave = function () { this.style.background = '#2a2a2a'; this.style.borderColor = '#555'; };
+      }
+
+      div.querySelector('#cr-reset').onclick = function () {
+        window.__claudosaurus.resetOptions();
+        setHelp(false);
+        setTimeout(function () { setHelp(true); }, 50);
+      };
+      div.querySelector('#cr-github').onclick = function () { window.open("https://github.com/animeshlego5/Claudosaurus", "_blank"); };
+
+      div.onmousedown = function (e) { e.stopPropagation(); };
+      div.ontouchstart = function (e) { e.stopPropagation(); };
+      div.oncontextmenu = function (e) { e.stopPropagation(); };
+
+      return div;
     }
 
-    // Grow/shrink the strip and toggle the cheatsheet. Resizing the canvas
-    // moves the ground line, so recompute GROUND and re-seat the dino on it.
+    // Toggle the settings overlay. No canvas resize — the modal sits on top
+    // of the game strip at its current height.
     function setHelp(on) {
       if (on === helpMode) return;
       helpMode = on;
-      var nh = on ? HELP_H : baseH;
-      if (canvas.height !== nh) {
-        canvas.height = nh;
-        canvas.style.height = nh + "px";
-        H = nh;
-        GROUND = H - 12;
-        ctx.imageSmoothingEnabled = false;
-        if (dino.onGround) dino.y = GROUND - dino.h;
+
+      var host = canvas.parentNode;
+      if (host) {
+        // Always rebuild — never cache a stale layout (width may have changed).
+        if (modal && modal.parentNode) modal.parentNode.removeChild(modal);
+        modal = null;
+        if (on) {
+          modal = buildSettingsModal();
+          host.appendChild(modal);
+        }
       }
       render();
+    }
+
+    // Rebuild the modal on live resize so the two-column breakpoint responds.
+    function rebuildModalIfOpen() {
+      if (!helpMode || !modal) return;
+      var host = canvas.parentNode;
+      if (!host) return;
+      if (modal.parentNode) modal.parentNode.removeChild(modal);
+      modal = buildSettingsModal();
+      host.appendChild(modal);
     }
 
     function drawScanlines() {
@@ -601,13 +702,16 @@
       color = sc.ink; // every draw fn inks in `color`
       ctx.clearRect(0, 0, W, H);
       if (sc.fill) { ctx.fillStyle = sc.fill; ctx.fillRect(0, 0, W, H); }
-      if (helpMode) { renderHelp(); return; }
       drawClouds();
       drawGround();
       drawDino();
       for (var i = 0; i < obstacles.length; i++) drawObstacle(obstacles[i]);
       drawHud();
       if (paused && state === STATE.RUNNING) drawCenter("paused", "resumes when Claude continues");
+      else if (resumeCountdown > 0 && state === STATE.RUNNING) {
+        var num = Math.ceil(resumeCountdown / 30);
+        drawCenter("resuming in " + num + "...", "");
+      }
       else if (state === STATE.READY) drawCenter("CLAUDOSAURUS", "press space / tap to run");
       else if (state === STATE.OVER) drawCenter("game over · " + pad(score), "space / tap to retry");
       drawScanlines();
@@ -616,7 +720,10 @@
     function loop() {
       if (!alive) return;
       if (!document.contains(canvas)) { teardown(); return; }
-      if (!helpMode && state === STATE.RUNNING && !paused) update();
+      if (!helpMode && state === STATE.RUNNING && !paused) {
+        if (resumeCountdown > 0) resumeCountdown--;
+        else update();
+      }
       render();
       rafId = requestAnimationFrame(loop);
     }
@@ -642,7 +749,7 @@
       if (!alive) return;
       if (e.type === "mousedown" && e.button !== 0) return; // ignore right/middle click
       e.preventDefault();
-      if (helpMode) { setHelp(false); return; } // a tap dismisses the cheatsheet
+      if (helpMode) { setHelp(false); return; } // a tap on the game dismisses the cheatsheet
       jump();
     }
     function onContextMenu(e) { e.preventDefault(); } // block right-click menu so focus never leaves
@@ -650,7 +757,7 @@
     function teardown() {
       alive = false;
       if (rafId) cancelAnimationFrame(rafId);
-      if (ro) { try { ro.disconnect(); } catch (e) {} ro = null; }
+      if (ro) { try { ro.disconnect(); } catch (e) { } ro = null; }
       window.removeEventListener("keydown", onKey, true);
       canvas.removeEventListener("mousedown", onPointer);
       canvas.removeEventListener("touchstart", onPointer);
@@ -659,7 +766,10 @@
 
     this.resize = function (newW) {
       newW = Math.max(CONFIG.minWidth, Math.floor(newW));
-      if (newW > 0 && newW !== W) { canvas.width = newW; W = newW; ctx.imageSmoothingEnabled = false; }
+      if (newW > 0 && newW !== W) {
+        canvas.width = newW; W = newW; ctx.imageSmoothingEnabled = false;
+        rebuildModalIfOpen();
+      }
     };
 
     this.start = function () {
@@ -681,8 +791,16 @@
     };
 
     // Freeze / unfreeze the simulation while keeping the scene on screen.
-    this.pause = function () { paused = true; };
-    this.resume = function () { paused = false; };
+    this.pause = function () {
+      paused = true;
+      setHelp(false);
+    };
+    this.resume = function () {
+      if (paused) {
+        paused = false;
+        if (state === STATE.RUNNING) resumeCountdown = 90;
+      }
+    };
     this.isPaused = function () { return paused; };
     this.toggleHelp = function () { setHelp(!helpMode); };
 
@@ -705,6 +823,7 @@
       spawnGap = s.spawnGap || 70;
       // A restored-from-crash run resumes live rather than on the game-over screen.
       state = (s.state === STATE.OVER) ? STATE.RUNNING : (s.state || STATE.RUNNING);
+      if (state === STATE.RUNNING) resumeCountdown = 90;
       if (s.dino) { dino.y = s.dino.y; dino.vy = s.dino.vy; dino.onGround = s.dino.onGround; }
       obstacles = (s.obstacles || []).map(function (o) { return { type: o.type, x: o.x, y: o.y, w: o.w, h: o.h }; });
       if (score > hi) hi = score;
@@ -739,7 +858,7 @@
   }
   function colorSourceIn(row) {
     return row.querySelector('[class*="icon_"],[class*="text_"]') ||
-           row.querySelector(CONFIG.busyContentSelector);
+      row.querySelector(CONFIG.busyContentSelector);
   }
 
   var active = null; // { row, host, game, hidden: [[el, prevDisplay], ...] }
@@ -788,7 +907,7 @@
   function promptUp() {
     try {
       if (CONFIG.pauseSelector && document.querySelector(CONFIG.pauseSelector)) return true;
-    } catch (e) {}
+    } catch (e) { }
     return permissionButtonsUp() || permissionTextUp();
   }
   // Freeze the simulation: the tab is hidden, a VS Code popup/modal stole focus,
@@ -809,7 +928,7 @@
     try {
       var s = active.game.getState();
       if (s && s.score > 0) lastSnapshot = { at: Date.now(), data: s };
-    } catch (e) {}
+    } catch (e) { }
   }
 
   function startGame(row) {
@@ -836,6 +955,7 @@
     host.className = "claudosaurus-host";
     host.style.width = "100%";
     host.style.margin = "2px 0";
+    host.style.position = "relative";
 
     var canvas = buildCanvas();
     host.appendChild(canvas);
@@ -845,7 +965,7 @@
     // Resume the previous run if it ended recently (e.g. a permission prompt
     // briefly tore the spinner row down), otherwise start fresh.
     if (lastSnapshot && Date.now() - lastSnapshot.at < CONFIG.resumeWindowMs) {
-      try { game.restore(lastSnapshot.data); } catch (e) {}
+      try { game.restore(lastSnapshot.data); } catch (e) { }
     }
     lastSnapshot = null;
     notBusySince = 0;
@@ -858,10 +978,10 @@
 
   function endGame() {
     if (!active) return;
-    try { active.game.teardown(); } catch (e) {}
+    try { active.game.teardown(); } catch (e) { }
     if (active.host && active.host.parentNode) active.host.parentNode.removeChild(active.host);
     for (var i = 0; i < active.hidden.length; i++) {
-      try { active.hidden[i][0].style.display = active.hidden[i][1] || ""; } catch (e) {}
+      try { active.hidden[i][0].style.display = active.hidden[i][1] || ""; } catch (e) { }
     }
     if (active.row) {
       active.row.style.height = "";
@@ -913,7 +1033,7 @@
   function scheduleEvaluate() {
     if (pending) return;
     pending = true;
-    requestAnimationFrame(function () { pending = false; try { evaluate(); } catch (e) {} });
+    requestAnimationFrame(function () { pending = false; try { evaluate(); } catch (e) { } });
   }
 
   // --- TEMP diagnostics: log spinner-ish elements as they appear, from
@@ -922,7 +1042,7 @@
   function debugReport(el) {
     var c = typeof el.className === "string" ? el.className : (el.className && el.className.baseVal) || "";
     var anim = "?";
-    try { anim = getComputedStyle(el).animationName; } catch (e) {}
+    try { anim = getComputedStyle(el).animationName; } catch (e) { }
     var hit = (anim && anim !== "none") ||
       /spin|load|think|progress|pending|working|dot|cursor|busy|stream|typing|ellipsis|loader/i.test(c);
     if (!hit) return;
@@ -965,7 +1085,7 @@
     var hosts = document.querySelectorAll(".claudosaurus-host");
     for (var i = 0; i < hosts.length; i++) {
       var h = hosts[i];
-      if (h.__game) { try { h.__game.teardown(); } catch (e) {} }
+      if (h.__game) { try { h.__game.teardown(); } catch (e) { } }
       if (h.parentNode) h.parentNode.removeChild(h);
     }
     if (includeTestRows) {
@@ -975,7 +1095,7 @@
   }
 
   function destroy() {
-    if (observer) { try { observer.disconnect(); } catch (e) {} observer = null; }
+    if (observer) { try { observer.disconnect(); } catch (e) { } observer = null; }
     if (poll) { clearInterval(poll); poll = null; }
     document.removeEventListener("visibilitychange", scheduleEvaluate);
     window.removeEventListener("blur", scheduleEvaluate, true);
@@ -988,9 +1108,9 @@
   // CONFIG and is read live each frame, so changes apply to a running game.
   // ----------------------------------------------------------------
   var SPEED_PRESETS = {
-    slow:   { startSpeed: 2.4, maxSpeed: 6.5, acceleration: 0.0007 },
-    normal: { startSpeed: 3.0, maxSpeed: 8.5, acceleration: 0.001 },
-    fast:   { startSpeed: 4.0, maxSpeed: 11.0, acceleration: 0.0016 }
+    slow: { startSpeed: 3.0, maxSpeed: 8.5, acceleration: 0.001 },
+    normal: { startSpeed: 4.0, maxSpeed: 11.0, acceleration: 0.0016 },
+    fast: { startSpeed: 5.2, maxSpeed: 14.0, acceleration: 0.0024 }
   };
   var JUMP_PRESETS = {
     floaty: { gravity: 0.45, jumpVelocity: -6.9 },
@@ -1013,14 +1133,14 @@
         var k = PERSIST_KEYS[i];
         if (o && o.hasOwnProperty(k)) CONFIG[k] = o[k];
       }
-    } catch (e) {}
+    } catch (e) { }
   }
   function saveOptions() {
     try {
       var o = {};
       for (var i = 0; i < PERSIST_KEYS.length; i++) o[PERSIST_KEYS[i]] = CONFIG[PERSIST_KEYS[i]];
       localStorage.setItem(OPTIONS_KEY, JSON.stringify(o));
-    } catch (e) {}
+    } catch (e) { }
   }
   function applyOptions(o) {
     if (!o) return;
@@ -1041,7 +1161,7 @@
     // Free play: keep the game up even when Claude is idle.
     setAlwaysOn: function (on) {
       CONFIG.alwaysOn = !!on;
-      try { localStorage.setItem(ALWAYS_ON_KEY, on ? "1" : "0"); } catch (e) {}
+      try { localStorage.setItem(ALWAYS_ON_KEY, on ? "1" : "0"); } catch (e) { }
       if (!on) removeGames(false);
       scheduleEvaluate();
       return CONFIG.alwaysOn;
@@ -1071,7 +1191,7 @@
     setScanlines: function (on) { applyOptions({ scanlines: !!on }); return CONFIG.scanlines; },
     resetOptions: function () {
       applyOptions({
-        startSpeed: 3.0, maxSpeed: 8.5, acceleration: 0.001, gravity: 0.62, jumpVelocity: -7.6,
+        startSpeed: 4.0, maxSpeed: 11.0, acceleration: 0.0016, gravity: 0.62, jumpVelocity: -7.6,
         theme: "auto", scanlines: false, clouds: true,
         enableBirds: true, birdMinScore: 150
       });
@@ -1121,7 +1241,7 @@
       startObserver();
       if (/[?&]claudeRexForce=1/.test(location.search)) window.__claudosaurus.spawnTest();
     } catch (e) {
-      try { console.warn("[claudosaurus] failed to start:", e); } catch (_) {}
+      try { console.warn("[claudosaurus] failed to start:", e); } catch (_) { }
     }
   }
 
