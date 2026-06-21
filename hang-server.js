@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /*
- * Claude-Rex — "black hole" test server
+ * Claudosaurus — "black hole" test server
  * ------------------------------------------------------------------
  * Accepts any request and NEVER responds, so the Claude Code CLI (which
  * the extension drives) sits in its "working" state indefinitely. That

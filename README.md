@@ -1,10 +1,10 @@
-# 🦖 Claudosaurus
+# Claudosaurus
 
 Turn Claude Code's idle wait into play time. While Claude is working, the "thinking" spinner in the chat panel is replaced with a playable, monochrome, Chrome-style dinosaur game.
 
-This patches the **Claude Code extension webview** (the chat panel UI) in any editor that ships it (**Antigravity**, VS Code, VS Code Insiders, Cursor, Windsurf).
+This patches the **Claude Code extension webview** (the chat panel UI) in any editor that ships it (Antigravity, VS Code, VS Code Insiders, Cursor, Windsurf).
 
-> ⚠️ **Note:** This patches your local Claude Code extension's `webview/index.js` file. A backup (`.claude-rex-bak`) is automatically created for easy uninstallation.
+> **Note:** This patches your local Claude Code extension's `webview/index.js` file. A backup (`.claudosaurus-bak`) is automatically created for easy uninstallation.
 
 ---
 
@@ -30,7 +30,7 @@ npm install
 node cli.js install
 ```
 
-*After installing, reload your editor window (Command Palette → **Developer: Reload Window**) to apply the patch.*
+*After installing, reload your editor window (Command Palette -> **Developer: Reload Window**) to apply the patch.*
 
 ---
 
