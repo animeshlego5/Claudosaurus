@@ -1153,7 +1153,7 @@
   // Public API + bootstrap.
   // ----------------------------------------------------------------
   window.__claudosaurus = {
-    version: "0.9.0",
+    version: "0.9.1",
     config: CONFIG,
     DinoGame: DinoGame,
     clear: function () { removeGames(true); },
