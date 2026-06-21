@@ -2,6 +2,7 @@
   "name": "claudosaurus",
   "version": "0.9.0",
   "description": "Turn the Claude Code 'thinking' spinner into a playable, monochrome Chrome-style dinosaur game.",
+  "author": "Animesh Gosain (https://github.com/animeshlego5)",
   "bin": {
     "claudosaurus": "cli.js"
   },

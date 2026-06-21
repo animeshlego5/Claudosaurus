@@ -1237,7 +1237,7 @@
   function boot() {
     try {
       loadOptions(); // restore the user's saved difficulty/theme tweaks
-      console.log("[claudosaurus] v" + window.__claudosaurus.version + " running @ " + location.href);
+      console.log("[claudosaurus] v" + window.__claudosaurus.version + " by @animeshlego5 running @ " + location.href);
       startObserver();
       if (/[?&]claudeRexForce=1/.test(location.search)) window.__claudosaurus.spawnTest();
     } catch (e) {
