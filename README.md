@@ -8,6 +8,13 @@ This patches the **Claude Code extension webview** (the chat panel UI) in any ed
 
 ---
 
+## Controls
+
+* **Jump / Start / Restart**: `Space`, `Up Arrow`, or **Left Click** / **Touch Tap** on the game canvas.
+* **Settings Menu**: Press `?` (question mark key) to toggle settings; `Escape` to close.
+
+---
+
 ## Installation
 
 ### Option 1: Via npm (Recommended)
