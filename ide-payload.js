@@ -24,8 +24,9 @@
  *     matches the theme exactly. Strictly monochrome.
  *
  * Also loadable standalone (see game.html) for zero-token development.
- * The T-Rex sprite is the authentic Chrome dino, decoded from the
- * Chromium offline sprite sheet into a 25x29 bitmap.
+ * All art is hand-drawn '#'-pixel bitmaps (dino, cacti, pterodactyl, cloud)
+ * rendered as 1px rects in the sampled spinner colour — strictly monochrome,
+ * no image assets, so nothing to load and no CSP surface.
  *
  * Vanilla JS, ES2019, no dependencies.
  */
@@ -37,6 +38,12 @@
   if (window.__claudosaurus && typeof window.__claudosaurus.__destroy === "function") {
     try { window.__claudosaurus.__destroy(); } catch (e) { }
   }
+
+  // Single source of truth for the version: the patcher (lib/patch.js) replaces
+  // the token below with package.json's version when injecting. Loaded raw by
+  // game.html (token left intact), so fall back to "dev" when unreplaced.
+  var VERSION = "__CLAUDOSAURUS_VERSION__";
+  if (/^__/.test(VERSION)) VERSION = "dev";
 
   // ----------------------------------------------------------------
   // Configuration.
@@ -100,9 +107,31 @@
     theme: "auto",         // "day" (light) | "night" (dark) | "auto" (match editor)
     scanlines: false,      // CRT scanline overlay
     clouds: true,          // parallax background clouds
+    dayNightCycle: false,  // invert the scene every `cycleScore` points (Chrome-style)
+    cycleScore: 500,       // points between day↔night flips when dayNightCycle is on
+
+    // Feedback. Sound is OFF by default (a webview beeping mid-task is rude);
+    // it's a one-tap toggle in the settings panel for those who want it.
+    sound: false,          // jump / milestone / game-over blips via WebAudio
 
     debug: false // set true to log busy-content candidates while tuning
   };
+
+  // ----------------------------------------------------------------
+  // Tunables schema — the single place that documents every user-facing knob:
+  // its range, step, and a one-line description. The settings panel builds its
+  // sliders straight from this, so adding a knob here surfaces it in the UI.
+  // (Edit CONFIG above to change a *default*; edit this to change a slider's
+  // bounds.) Keys map 1:1 to CONFIG.
+  // ----------------------------------------------------------------
+  var TUNABLES = [
+    { key: "startSpeed",   label: "Start speed", min: 1,  max: 9,    step: 0.1,   desc: "px/frame when a run begins" },
+    { key: "maxSpeed",     label: "Max speed",   min: 4,  max: 20,   step: 0.5,   desc: "speed cap as the run ramps up" },
+    { key: "acceleration", label: "Ramp",        min: 0,  max: 0.01, step: 0.0002, desc: "speed added each frame" },
+    { key: "gravity",      label: "Gravity",     min: 0.3, max: 1.2, step: 0.01,  desc: "downward pull per frame" },
+    { key: "jumpVelocity", label: "Jump power",  min: -12, max: -5,  step: 0.1,   desc: "upward kick (more negative = higher)" },
+    { key: "birdMinScore", label: "Birds at",    min: 0,  max: 600,  step: 25,    desc: "score where pterodactyls start" }
+  ];
 
   // ----------------------------------------------------------------
   // Authentic Chrome T-Rex sprite. '#' = pixel. Body is shared; legs
@@ -279,6 +308,65 @@
   }
 
   // ----------------------------------------------------------------
+  // Sound — a tiny WebAudio blip engine. Off unless CONFIG.sound is on. The
+  // AudioContext is created lazily on the first sound (always triggered by a
+  // jump, i.e. a user gesture, so autoplay policies are satisfied) and reused.
+  // ----------------------------------------------------------------
+  var audioCtx = null;
+  function audio() {
+    if (audioCtx) return audioCtx;
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) audioCtx = new AC();
+    } catch (e) { audioCtx = null; }
+    return audioCtx;
+  }
+  // type: "jump" | "score" | "over". Short square-wave blips, kept quiet.
+  function sfx(type) {
+    if (!CONFIG.sound) return;
+    var ac = audio();
+    if (!ac) return;
+    try {
+      if (ac.state === "suspended") ac.resume();
+      var t = ac.currentTime;
+      var osc = ac.createOscillator();
+      var gain = ac.createGain();
+      osc.type = "square";
+      if (type === "jump") { osc.frequency.setValueAtTime(660, t); osc.frequency.exponentialRampToValueAtTime(990, t + 0.09); }
+      else if (type === "score") { osc.frequency.setValueAtTime(880, t); osc.frequency.setValueAtTime(1320, t + 0.06); }
+      else { osc.frequency.setValueAtTime(440, t); osc.frequency.exponentialRampToValueAtTime(110, t + 0.22); }
+      var dur = type === "over" ? 0.26 : 0.1;
+      gain.gain.setValueAtTime(0.05, t);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      osc.connect(gain); gain.connect(ac.destination);
+      osc.start(t); osc.stop(t + dur);
+    } catch (e) { }
+  }
+
+  // ----------------------------------------------------------------
+  // Lifetime stats — games played, total distance (in "ground pixels"), and
+  // jumps. Persisted separately from options so a Reset of difficulty/theme
+  // never wipes a player's history.
+  // ----------------------------------------------------------------
+  var STATS_KEY = "claudeRexStats";
+  function readStats() {
+    try {
+      var o = JSON.parse(localStorage.getItem(STATS_KEY) || "{}") || {};
+      return { games: o.games | 0, distance: o.distance | 0, jumps: o.jumps | 0 };
+    } catch (e) { return { games: 0, distance: 0, jumps: 0 }; }
+  }
+  function bumpStats(delta) {
+    try {
+      var s = readStats();
+      if (delta.games) s.games += delta.games;
+      if (delta.distance) s.distance += Math.round(delta.distance);
+      if (delta.jumps) s.jumps += delta.jumps;
+      localStorage.setItem(STATS_KEY, JSON.stringify(s));
+      return s;
+    } catch (e) { return null; }
+  }
+
+  // ----------------------------------------------------------------
   // The game. Self-contained; renders into a provided <canvas> in the
   // given colour. Supports live resize via resize(newWidth).
   // ----------------------------------------------------------------
@@ -315,6 +403,11 @@
 
     var STATE = { READY: 0, RUNNING: 1, OVER: 2 };
     var resumeCountdown = 0;
+    var lastMilestone = 0;  // last 100-point mark we celebrated this run
+    var runJumps = 0;       // jumps this run, flushed to lifetime stats on game over
+    var flashTtl = 0;       // frames remaining on the floating "+100" flash
+    var flashText = "";
+    var settingsHotspot = null; // canvas-space bounds of the "⚙ settings" button (set in drawHud)
 
     var dino = { x: 22, w: DINO_W, h: DINO_H, y: GROUND - DINO_H, vy: 0, onGround: true };
 
@@ -333,8 +426,7 @@
     var alive = true;
     var paused = false;
     var helpMode = false;
-    var baseH = H;           // the normal strip height; help mode grows past it
-    var HELP_H = 190;        // taller canvas while the cheatsheet is open
+    var SETTINGS_H = 300;    // host grows to this while the settings panel is open
 
     function readHi() {
       try { return parseInt(localStorage.getItem(CONFIG.hiScoreKey) || "0", 10) || 0; }
@@ -351,6 +443,11 @@
       speed = CONFIG.startSpeed;
       score = 0;
       frame = 0;
+      lastMilestone = 0;
+      runJumps = 0;
+      flashTtl = 0;
+      dino.w = DINO_W;
+      dino.h = DINO_H;
       dino.y = GROUND - dino.h;
       dino.vy = 0;
       dino.onGround = true;
@@ -358,7 +455,7 @@
 
     function jump() {
       if (state === STATE.READY || state === STATE.OVER) { state = STATE.RUNNING; reset(); return; }
-      if (dino.onGround) { dino.vy = CONFIG.jumpVelocity; dino.onGround = false; }
+      if (dino.onGround) { dino.vy = CONFIG.jumpVelocity; dino.onGround = false; runJumps++; sfx("jump"); }
     }
 
     function spawn() {
@@ -386,6 +483,14 @@
       speed = Math.min(CONFIG.maxSpeed, speed + CONFIG.acceleration);
       distance += speed;
       score = Math.floor(distance / 7);
+
+      // Every 100 points: a floating "+100" flash and a blip, like the real game.
+      if (score - lastMilestone >= 100) {
+        lastMilestone = score - (score % 100);
+        flashText = "+100"; flashTtl = 45;
+        sfx("score");
+      }
+      if (flashTtl > 0) flashTtl--;
 
       dino.vy += CONFIG.gravity;
       dino.y += dino.vy;
@@ -417,6 +522,8 @@
         if (aabb(db, { x: o.x + 1, y: o.y + 1, w: o.w - 2, h: o.h - 2 })) {
           state = STATE.OVER;
           if (score > hi) { hi = score; writeHi(hi); }
+          bumpStats({ games: 1, distance: distance, jumps: runJumps });
+          sfx("over");
           return;
         }
       }
@@ -451,7 +558,7 @@
         drawBitmap(BIRD_FRAMES[(frame >> 2) & 1], x, y); // flap wings
         return;
       }
-      drawBitmap(o.sprite, x, y);
+      if (o.sprite) drawBitmap(o.sprite, x, y);
     }
 
     function drawClouds() {
@@ -502,10 +609,27 @@
       ctx.textAlign = "right";
       ctx.globalAlpha = 0.85;
       ctx.fillText("HI " + pad(hi) + "  " + pad(score), W - 6, 4);
-      // Settings hint, tucked in the corner.
+      // Settings button, tucked in the corner. The "?" key can't be relied on
+      // (the chat input holds keyboard focus, so it just types "?"), so this
+      // label is a click/tap target — its bounds are recorded for onPointer.
       ctx.textAlign = "left";
-      ctx.globalAlpha = 0.4;
-      ctx.fillText("? settings", 6, 4);
+      ctx.globalAlpha = helpMode ? 0.8 : 0.45;
+      var label = "⚙ settings";
+      ctx.fillText(label, 6, 4);
+      settingsHotspot = { x: 0, y: 0, w: 6 + ctx.measureText(label).width + 8, h: 20 };
+      ctx.globalAlpha = 1;
+      ctx.textAlign = "left";
+    }
+
+    // The "+100" milestone flash: floats up a touch and fades over its lifetime.
+    function drawFlash() {
+      if (flashTtl <= 0) return;
+      ctx.fillStyle = color;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      ctx.globalAlpha = Math.max(0, flashTtl / 45) * 0.9;
+      ctx.font = 'bold 12px ui-monospace, Menlo, Consolas, monospace';
+      ctx.fillText(flashText, W / 2, 16 - (45 - flashTtl) * 0.18);
       ctx.globalAlpha = 1;
       ctx.textAlign = "left";
     }
@@ -529,117 +653,214 @@
     // `fill` is the canvas background (null = transparent, i.e. show the editor
     // through so it matches natively). day = light scene, night = dark scene,
     // auto = whatever the editor already is (fg over its own bg).
+    var DAY = { ink: darkInk, fill: lightInk };   // dark sprites on a light field
+    var NIGHT = { ink: lightInk, fill: darkInk };  // light sprites on a dark field
     function sceneColors() {
-      if (CONFIG.theme === "day") return { ink: darkInk, fill: lightInk };
-      if (CONFIG.theme === "night") return { ink: lightInk, fill: darkInk };
+      // Chrome-style auto flip: alternate day/night every `cycleScore` points.
+      if (CONFIG.dayNightCycle && state === STATE.RUNNING) {
+        var phase = Math.floor(score / Math.max(1, CONFIG.cycleScore)) % 2;
+        return phase ? NIGHT : DAY;
+      }
+      if (CONFIG.theme === "day") return DAY;
+      if (CONFIG.theme === "night") return NIGHT;
       return { ink: fg, fill: null }; // auto: match the editor
+    }
+
+    // Format a tunable's value for its slider readout.
+    function fmtVal(key, v) {
+      v = +v;
+      if (key === "acceleration") return v.toFixed(4);
+      if (key === "birdMinScore") return String(Math.round(v));
+      if (key === "gravity") return v.toFixed(2);
+      return v.toFixed(1);
+    }
+    // Friendly lifetime-distance readout (distance is in ground pixels).
+    function fmtDist(px) {
+      if (px >= 100000) return (px / 1000).toFixed(0) + "k";
+      if (px >= 1000) return (px / 1000).toFixed(1) + "k";
+      return String(px | 0);
+    }
+    // Which preset (if any) the current numbers correspond to — else "custom".
+    function presetName(presets) {
+      for (var k in presets) {
+        var p = presets[k], match = true;
+        for (var pk in p) if (CONFIG[pk] !== p[pk]) { match = false; break; }
+        if (match) return k;
+      }
+      return "custom";
     }
 
     var modal = null;
     function buildSettingsModal() {
-      var speedName = "normal";
-      for (var k in SPEED_PRESETS) if (CONFIG.startSpeed === SPEED_PRESETS[k].startSpeed) speedName = k;
-      var jumpName = "normal";
-      for (var j in JUMP_PRESETS) if (CONFIG.gravity === JUMP_PRESETS[j].gravity) jumpName = j;
+      var speedName = presetName(SPEED_PRESETS);
+      var jumpName = presetName(JUMP_PRESETS);
 
       var div = document.createElement("div");
-      div.style.cssText = "position:absolute; inset:0; background:rgba(10,10,10,0.92); color:#e0e0e0; z-index:10; display:flex; flex-direction:column; padding: 8px 12px 4px; font-family: ui-monospace, monospace; font-size: 11px; box-sizing: border-box; overflow-y: auto; backdrop-filter: blur(4px);";
+      div.style.cssText = "position:absolute; inset:0; background:rgba(10,10,10,0.94); color:#e0e0e0; z-index:10; display:flex; flex-direction:column; gap:3px; padding: 8px 12px 6px; font-family: ui-monospace, monospace; font-size: 11px; box-sizing: border-box; overflow-y: auto; backdrop-filter: blur(4px);";
 
-      // Detect if we have enough width for two columns.
       var hostW = canvas.parentNode ? canvas.parentNode.clientWidth : W;
-      var wide = hostW >= 360;
+      var wide = hostW >= 340;
 
-      var selectStyle = "background:#2a2a2a; color:#e0e0e0; border:1px solid #444; padding:2px 6px; border-radius:4px; outline:none; cursor:pointer; font-size:11px; font-family:inherit; width:68px;";
-      // Compact: label and control sit close together with a small gap.
-      var rowStyle = "display:flex; align-items:center; gap:8px;";
-      // The label floats left, the control hugs it (no space-between stretch).
-      var labelStyle = "opacity:0.75; white-space:nowrap; min-width:58px;";
+      var selectStyle = "background:#2a2a2a; color:#e0e0e0; border:1px solid #444; padding:2px 6px; border-radius:4px; outline:none; cursor:pointer; font-size:11px; font-family:inherit; width:72px;";
+      var rowStyle = "display:flex; align-items:center; justify-content:space-between; gap:8px;";
+      var labelStyle = "opacity:0.75; white-space:nowrap;";
+      var subheadStyle = "opacity:0.4; font-size:9px; letter-spacing:1px; text-transform:uppercase; margin:3px 0 1px;";
 
-      // Build the four settings rows as individual HTML strings.
-      var themeRow =
-        '<div style="' + rowStyle + '">' +
-        '<span style="' + labelStyle + '">Theme</span>' +
-        '<select id="cr-theme" style="' + selectStyle + '">' +
-        '<option value="auto" ' + (CONFIG.theme === 'auto' ? 'selected' : '') + '>Auto</option>' +
-        '<option value="day" ' + (CONFIG.theme === 'day' ? 'selected' : '') + '>Day</option>' +
-        '<option value="night" ' + (CONFIG.theme === 'night' ? 'selected' : '') + '>Night</option>' +
-        '</select>' +
-        '</div>';
-
-      var speedRow =
-        '<div style="' + rowStyle + '">' +
-        '<span style="' + labelStyle + '">Speed</span>' +
-        '<select id="cr-speed" style="' + selectStyle + '">' +
-        '<option value="slow" ' + (speedName === 'slow' ? 'selected' : '') + '>Slow</option>' +
-        '<option value="normal" ' + (speedName === 'normal' ? 'selected' : '') + '>Normal</option>' +
-        '<option value="fast" ' + (speedName === 'fast' ? 'selected' : '') + '>Fast</option>' +
-        '</select>' +
-        '</div>';
-
-      var jumpRow =
-        '<div style="' + rowStyle + '">' +
-        '<span style="' + labelStyle + '">Jump</span>' +
-        '<select id="cr-jump" style="' + selectStyle + '">' +
-        '<option value="floaty" ' + (jumpName === 'floaty' ? 'selected' : '') + '>Floaty</option>' +
-        '<option value="normal" ' + (jumpName === 'normal' ? 'selected' : '') + '>Normal</option>' +
-        '<option value="snappy" ' + (jumpName === 'snappy' ? 'selected' : '') + '>Snappy</option>' +
-        '</select>' +
-        '</div>';
-
-      var toggleBg = CONFIG.scanlines ? '#666' : '#333';
-      var toggleDot = CONFIG.scanlines ? 'translateX(12px)' : 'translateX(0)';
-      var scanlinesRow =
-        '<div style="' + rowStyle + '">' +
-        '<span style="' + labelStyle + '">Scanlines</span>' +
-        '<div style="width:68px; display:flex; align-items:center;">' +
-        '<label id="cr-scanlines" style="display:inline-block; width:26px; height:14px; background:' + toggleBg + '; border-radius:7px; position:relative; cursor:pointer; transition:background .2s; flex-shrink:0;">' +
-        '<span style="position:absolute; top:2px; left:2px; width:10px; height:10px; background:#e0e0e0; border-radius:50%; transition:transform .2s; transform:' + toggleDot + ';"></span>' +
-        '</label>' +
-        '</div>' +
-        '</div>';
-
-      var separator = '<div style="border-top:1px solid #333; margin:1px 0;"></div>';
-      var btnBase = "flex:1; color:#e0e0e0; border:1px solid #555; padding:3px 0; cursor:pointer; border-radius:4px; font-weight:600; font-size:11px; font-family:inherit; transition:background .15s, border-color .15s;";
-
-      var settingsBody;
-      if (wide) {
-        // Two-column grid: left = Theme + Speed, right = Jump + Scanlines.
-        settingsBody =
-          '<div style="display:grid; grid-template-columns:1fr 1fr; column-gap:24px; row-gap:4px;">' +
-          themeRow + jumpRow + speedRow + scanlinesRow +
-          '</div>';
-      } else {
-        // Narrow: single-column stack.
-        settingsBody =
-          '<div style="display:flex; flex-direction:column; gap:4px;">' +
-          themeRow + speedRow + jumpRow + scanlinesRow +
+      function selectHtml(id, opts, current) {
+        var o = "";
+        for (var i = 0; i < opts.length; i++) {
+          var val = opts[i][0], txt = opts[i][1];
+          o += '<option value="' + val + '"' + (current === val ? ' selected' : '') + '>' + txt + '</option>';
+        }
+        return '<select id="' + id + '" style="' + selectStyle + '">' + o + '</select>';
+      }
+      function selectRow(id, label, opts, current) {
+        return '<div style="' + rowStyle + '"><span style="' + labelStyle + '">' + label + '</span>' + selectHtml(id, opts, current) + '</div>';
+      }
+      function toggleHtml(id, label, on) {
+        var bg = on ? '#5a7d5a' : '#333';
+        var dot = on ? 'translateX(12px)' : 'translateX(0)';
+        return '<div style="' + rowStyle + '"><span style="' + labelStyle + '">' + label + '</span>' +
+          '<label id="' + id + '" style="display:inline-block; width:26px; height:14px; background:' + bg + '; border-radius:7px; position:relative; cursor:pointer; transition:background .2s; flex-shrink:0;">' +
+          '<span style="position:absolute; top:2px; left:2px; width:10px; height:10px; background:#e0e0e0; border-radius:50%; transition:transform .2s; transform:' + dot + ';"></span>' +
+          '</label></div>';
+      }
+      function sliderHtml(t) {
+        var v = CONFIG[t.key];
+        return '<div style="display:flex; flex-direction:column; gap:1px;" title="' + t.desc + '">' +
+          '<div style="display:flex; justify-content:space-between; align-items:baseline;">' +
+          '<span style="opacity:0.75;">' + t.label + '</span>' +
+          '<span id="crv-' + t.key + '" style="opacity:0.55; font-variant-numeric:tabular-nums;">' + fmtVal(t.key, v) + '</span>' +
+          '</div>' +
+          '<input id="cr-' + t.key + '" class="cr-range" type="range" min="' + t.min + '" max="' + t.max + '" step="' + t.step + '" value="' + v + '">' +
           '</div>';
       }
 
+      var themeRow = selectRow("cr-theme", "Theme", [["auto", "Auto"], ["day", "Day"], ["night", "Night"]], CONFIG.theme);
+      var speedRow = selectRow("cr-speed", "Speed", [["slow", "Slow"], ["normal", "Normal"], ["fast", "Fast"], ["custom", "Custom"]], speedName);
+      var jumpRow = selectRow("cr-jump", "Jump", [["floaty", "Floaty"], ["normal", "Normal"], ["snappy", "Snappy"], ["custom", "Custom"]], jumpName);
+
+      var lookToggles = toggleHtml("cr-scanlines", "Scanlines", CONFIG.scanlines) +
+        toggleHtml("cr-clouds", "Clouds", CONFIG.clouds) +
+        toggleHtml("cr-daynight", "Day/Night", CONFIG.dayNightCycle);
+      var feelToggles = toggleHtml("cr-sound", "Sound", CONFIG.sound) +
+        toggleHtml("cr-birds", "Birds", CONFIG.enableBirds) +
+        toggleHtml("cr-alwayson", "Free play", CONFIG.alwaysOn);
+
+      var colWrap = "display:grid; grid-template-columns:" + (wide ? "1fr 1fr" : "1fr") + "; column-gap:22px; row-gap:3px;";
+
+      var slidersHtml = "";
+      for (var s = 0; s < TUNABLES.length; s++) slidersHtml += sliderHtml(TUNABLES[s]);
+      var slidersWrap = '<div style="display:grid; grid-template-columns:' + (wide ? "1fr 1fr" : "1fr") + '; column-gap:18px; row-gap:5px;">' + slidersHtml + '</div>';
+
+      var st = readStats();
+      var statsLine = '<div style="opacity:0.45; text-align:center; font-size:9.5px; padding-top:1px;">' +
+        'games ' + st.games + ' · jumps ' + st.jumps + ' · dist ' + fmtDist(st.distance) + '</div>';
+
+      var btnBase = "flex:1; color:#e0e0e0; border:1px solid #555; padding:3px 0; cursor:pointer; border-radius:4px; font-weight:600; font-size:11px; font-family:inherit; transition:background .15s, border-color .15s; background:#2a2a2a;";
+
+      // Range inputs styled only via `accent-color` vanish in webviews that ship
+      // an `input{appearance:none}` reset (no track, no thumb). So we draw the
+      // track + thumb ourselves, scoped to our modal and flagged !important, so
+      // the sliders render the same everywhere — editor webview or browser.
+      var rangeCss =
+        '<style>' +
+        '.claudosaurus-host input.cr-range{-webkit-appearance:none!important;appearance:none!important;' +
+        'width:100%!important;height:4px!important;margin:6px 0!important;padding:0!important;' +
+        'background:#3a3f47!important;border:none!important;border-radius:3px!important;outline:none!important;cursor:pointer!important;}' +
+        '.claudosaurus-host input.cr-range::-webkit-slider-runnable-track{height:4px;background:#3a3f47;border-radius:3px;}' +
+        '.claudosaurus-host input.cr-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;' +
+        'width:13px;height:13px;margin-top:-5px;border:none;border-radius:50%;background:#9ab;cursor:pointer;}' +
+        '.claudosaurus-host input.cr-range::-moz-range-track{height:4px;background:#3a3f47;border-radius:3px;}' +
+        '.claudosaurus-host input.cr-range::-moz-range-thumb{width:13px;height:13px;border:none;border-radius:50%;background:#9ab;cursor:pointer;}' +
+        '</style>';
+
       div.innerHTML =
-        // Header.
+        rangeCss +
         '<div style="display:flex; justify-content:center; align-items:center; padding-bottom:1px; position:relative;">' +
         '<span style="font-size:11px; font-weight:700; letter-spacing:0.5px; line-height:1;">CLAUDOSAURUS</span>' +
+        '<span style="opacity:0.3; font-size:9px; position:absolute; left:0; top:4px;">v' + VERSION + '</span>' +
         '<span style="cursor:pointer; opacity:0.5; padding:0 2px; font-size:11px; line-height:1; transition:opacity .15s; position:absolute; right:0; top:4px;" id="cr-close">✖</span>' +
         '</div>' +
-        // Settings body.
-        '<div style="padding:2px 0;">' + settingsBody + '</div>' +
-        // Footer buttons.
-        '<div style="display:flex; gap:8px; padding-top:2px;">' +
-        '<button id="cr-reset" style="' + btnBase + ' background:#2a2a2a;">Reset</button>' +
-        '<button id="cr-github" style="' + btnBase + ' background:#2a2a2a;">GitHub</button>' +
+        '<div style="' + subheadStyle + '">Look</div>' +
+        '<div style="' + colWrap + '">' + themeRow + lookToggles + '</div>' +
+        '<div style="' + subheadStyle + '">Feel</div>' +
+        '<div style="' + colWrap + '">' + speedRow + jumpRow + feelToggles + '</div>' +
+        '<div style="' + subheadStyle + '">Fine-tune</div>' +
+        slidersWrap +
+        statsLine +
+        '<div style="display:flex; gap:8px; padding-top:3px;">' +
+        '<button id="cr-reset" style="' + btnBase + '">Reset</button>' +
+        '<button id="cr-github" style="' + btnBase + '">GitHub</button>' +
         '</div>';
 
-      // Wire up event handlers.
+      // --- Wiring -----------------------------------------------------
       div.querySelector('#cr-close').onclick = function () { setHelp(false); };
       div.querySelector('#cr-close').onmouseenter = function () { this.style.opacity = '1'; };
       div.querySelector('#cr-close').onmouseleave = function () { this.style.opacity = '0.5'; };
-      div.querySelector('#cr-theme').onchange = function (e) { window.__claudosaurus.setTheme(e.target.value); };
-      div.querySelector('#cr-speed').onchange = function (e) { window.__claudosaurus.setSpeed(e.target.value); };
-      div.querySelector('#cr-jump').onchange = function (e) { window.__claudosaurus.setJump(e.target.value); };
-      div.querySelector('#cr-scanlines').onclick = function () { var on = !CONFIG.scanlines; window.__claudosaurus.setScanlines(on); this.style.background = on ? '#666' : '#333'; this.querySelector('span').style.transform = on ? 'translateX(12px)' : 'translateX(0)'; };
 
-      // Button hover effects.
+      // Keep the fine-tune sliders showing live CONFIG values (e.g. after a
+      // preset pick changes several at once).
+      function syncSliders() {
+        for (var i = 0; i < TUNABLES.length; i++) {
+          var t = TUNABLES[i];
+          var inp = div.querySelector('#cr-' + t.key);
+          var lab = div.querySelector('#crv-' + t.key);
+          if (inp) inp.value = CONFIG[t.key];
+          if (lab) lab.textContent = fmtVal(t.key, CONFIG[t.key]);
+        }
+      }
+
+      div.querySelector('#cr-theme').onchange = function (e) { window.__claudosaurus.setTheme(e.target.value); };
+      div.querySelector('#cr-speed').onchange = function (e) {
+        if (e.target.value !== "custom") { window.__claudosaurus.setSpeed(e.target.value); syncSliders(); }
+      };
+      div.querySelector('#cr-jump').onchange = function (e) {
+        if (e.target.value !== "custom") { window.__claudosaurus.setJump(e.target.value); syncSliders(); }
+      };
+
+      // Toggles: each flips its CONFIG flag via the public API and updates its
+      // own switch visuals in place (no rebuild).
+      function wireToggle(id, getOn, apply) {
+        var el = div.querySelector('#' + id);
+        if (!el) return;
+        el.onclick = function () {
+          var on = !getOn();
+          apply(on);
+          el.style.background = on ? '#5a7d5a' : '#333';
+          el.querySelector('span').style.transform = on ? 'translateX(12px)' : 'translateX(0)';
+        };
+      }
+      wireToggle('cr-scanlines', function () { return CONFIG.scanlines; }, function (on) { window.__claudosaurus.setScanlines(on); });
+      wireToggle('cr-clouds', function () { return CONFIG.clouds; }, function (on) { window.__claudosaurus.setOptions({ clouds: on }); });
+      wireToggle('cr-daynight', function () { return CONFIG.dayNightCycle; }, function (on) { window.__claudosaurus.setOptions({ dayNightCycle: on }); });
+      wireToggle('cr-sound', function () { return CONFIG.sound; }, function (on) { window.__claudosaurus.setSound(on); });
+      wireToggle('cr-birds', function () { return CONFIG.enableBirds; }, function (on) { window.__claudosaurus.setOptions({ enableBirds: on }); });
+      wireToggle('cr-alwayson', function () { return CONFIG.alwaysOn; }, function (on) { window.__claudosaurus.setAlwaysOn(on); });
+
+      // Sliders: live-apply on input; leaving a preset flips its select to Custom.
+      for (var si = 0; si < TUNABLES.length; si++) {
+        (function (t) {
+          var inp = div.querySelector('#cr-' + t.key);
+          var lab = div.querySelector('#crv-' + t.key);
+          if (!inp) return;
+          inp.oninput = function () {
+            var num = parseFloat(inp.value);
+            var o = {}; o[t.key] = num;
+            window.__claudosaurus.setOptions(o);
+            if (lab) lab.textContent = fmtVal(t.key, num);
+            if (t.key === "startSpeed" || t.key === "maxSpeed" || t.key === "acceleration") {
+              var sp = div.querySelector('#cr-speed'); if (sp) sp.value = "custom";
+            } else if (t.key === "gravity" || t.key === "jumpVelocity") {
+              var jp = div.querySelector('#cr-jump'); if (jp) jp.value = "custom";
+            }
+          };
+          // Don't let a drag on the slider bubble out to the canvas (= a jump).
+          inp.onmousedown = function (e) { e.stopPropagation(); };
+          inp.ontouchstart = function (e) { e.stopPropagation(); };
+        })(TUNABLES[si]);
+      }
+
       var btns = div.querySelectorAll('button');
       for (var b = 0; b < btns.length; b++) {
         btns[b].onmouseenter = function () { this.style.background = '#3a3a3a'; this.style.borderColor = '#777'; };
@@ -660,8 +881,8 @@
       return div;
     }
 
-    // Toggle the settings overlay. No canvas resize — the modal sits on top
-    // of the game strip at its current height.
+    // Toggle the settings overlay. The host grows to SETTINGS_H while open so
+    // the (now taller) panel has room; the canvas itself keeps its strip height.
     function setHelp(on) {
       if (on === helpMode) return;
       helpMode = on;
@@ -672,8 +893,11 @@
         if (modal && modal.parentNode) modal.parentNode.removeChild(modal);
         modal = null;
         if (on) {
+          host.style.height = SETTINGS_H + "px";
           modal = buildSettingsModal();
           host.appendChild(modal);
+        } else {
+          host.style.height = "";
         }
       }
       render();
@@ -707,6 +931,7 @@
       drawDino();
       for (var i = 0; i < obstacles.length; i++) drawObstacle(obstacles[i]);
       drawHud();
+      drawFlash();
       if (paused && state === STATE.RUNNING) drawCenter("paused", "resumes when Claude continues");
       else if (resumeCountdown > 0 && state === STATE.RUNNING) {
         var num = Math.ceil(resumeCountdown / 30);
@@ -745,10 +970,33 @@
         jump();
       }
     }
+    // Map a mouse/touch event to canvas (drawing-buffer) coordinates.
+    function pointerPos(e) {
+      try {
+        var rect = canvas.getBoundingClientRect();
+        var t = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]);
+        var cx = t ? t.clientX : e.clientX;
+        var cy = t ? t.clientY : e.clientY;
+        if (cx == null || cy == null) return null;
+        return {
+          x: (cx - rect.left) * (W / (rect.width || W)),
+          y: (cy - rect.top) * (H / (rect.height || H))
+        };
+      } catch (err) { return null; }
+    }
+    function inHotspot(pt, h) {
+      return !!(pt && h && pt.x >= h.x && pt.x <= h.x + h.w && pt.y >= h.y && pt.y <= h.y + h.h);
+    }
     function onPointer(e) {
       if (!alive) return;
       if (e.type === "mousedown" && e.button !== 0) return; // ignore right/middle click
       e.preventDefault();
+      // Take keyboard focus so Space/Arrow/"?" reach the game from here on.
+      // preventDefault above suppresses the implicit focus, so do it explicitly.
+      try { canvas.focus({ preventScroll: true }); } catch (err) { try { canvas.focus(); } catch (e2) { } }
+      // The "⚙ settings" corner button opens the panel — the reliable path,
+      // since the chat input owns the keyboard so the "?" shortcut can't fire.
+      if (inHotspot(pointerPos(e), settingsHotspot)) { setHelp(!helpMode); return; }
       if (helpMode) { setHelp(false); return; } // a tap on the game dismisses the cheatsheet
       jump();
     }
@@ -811,7 +1059,7 @@
         distance: distance, speed: speed, score: score, frame: frame,
         spawnGap: spawnGap, state: state,
         dino: { y: dino.y, vy: dino.vy, onGround: dino.onGround },
-        obstacles: obstacles.map(function (o) { return { type: o.type, x: o.x, y: o.y, w: o.w, h: o.h }; })
+        obstacles: obstacles.map(function (o) { return { type: o.type, x: o.x, y: o.y, w: o.w, h: o.h, sprite: o.sprite }; })
       };
     };
     this.restore = function (s) {
@@ -820,12 +1068,13 @@
       speed = s.speed || CONFIG.startSpeed;
       score = s.score || 0;
       frame = s.frame || 0;
+      lastMilestone = score - (score % 100); // don't re-flash past milestones on resume
       spawnGap = s.spawnGap || 70;
       // A restored-from-crash run resumes live rather than on the game-over screen.
       state = (s.state === STATE.OVER) ? STATE.RUNNING : (s.state || STATE.RUNNING);
       if (state === STATE.RUNNING) resumeCountdown = 90;
       if (s.dino) { dino.y = s.dino.y; dino.vy = s.dino.vy; dino.onGround = s.dino.onGround; }
-      obstacles = (s.obstacles || []).map(function (o) { return { type: o.type, x: o.x, y: o.y, w: o.w, h: o.h }; });
+      obstacles = (s.obstacles || []).map(function (o) { return { type: o.type, x: o.x, y: o.y, w: o.w, h: o.h, sprite: o.sprite }; });
       if (score > hi) hi = score;
     };
 
@@ -845,6 +1094,12 @@
     canvas.style.imageRendering = "pixelated";
     canvas.style.cursor = "pointer";
     canvas.style.outline = "none";
+    // Focusable so it can own the keyboard. Without this, keydown always targets
+    // the chat input (a typing target) and the game's key handler bails out — so
+    // Space/Arrow/"?" never reach the game and only mouse clicks work. We never
+    // auto-focus (that would steal focus mid-chat); a click focuses it on demand.
+    canvas.tabIndex = 0;
+    canvas.setAttribute("aria-label", "Claudosaurus dino game — click, then Space or Up to jump");
     return canvas;
   }
 
@@ -1120,7 +1375,8 @@
   // Only these keys are persisted (everything user-tunable; not selectors/internals).
   var PERSIST_KEYS = [
     "startSpeed", "maxSpeed", "acceleration", "gravity", "jumpVelocity",
-    "theme", "scanlines", "clouds", "enableBirds", "birdMinScore"
+    "theme", "scanlines", "clouds", "dayNightCycle", "cycleScore",
+    "sound", "enableBirds", "birdMinScore"
   ];
   var OPTIONS_KEY = "claudeRexOptions";
 
@@ -1149,11 +1405,32 @@
     scheduleEvaluate();
   }
 
+  // Selector overrides — kept separate from the options above so a normal
+  // settings change never persists a (possibly stale) selector. If a future
+  // extension update breaks detection, users can self-heal without re-patching
+  // or editing code: __claudosaurus.setSelectors({ spinnerRow, busyContent }).
+  // These are only persisted (and thus only override the code defaults) once
+  // explicitly set, so the shipped defaults stay authoritative otherwise.
+  var DEFAULT_SELECTORS = {
+    spinnerRowSelector: CONFIG.spinnerRowSelector,
+    busyContentSelector: CONFIG.busyContentSelector
+  };
+  var SELECTORS_KEY = "claudeRexSelectors";
+  function loadSelectors() {
+    try {
+      var raw = localStorage.getItem(SELECTORS_KEY);
+      if (!raw) return;
+      var o = JSON.parse(raw);
+      if (o && o.spinnerRowSelector) CONFIG.spinnerRowSelector = o.spinnerRowSelector;
+      if (o && o.busyContentSelector) CONFIG.busyContentSelector = o.busyContentSelector;
+    } catch (e) { }
+  }
+
   // ----------------------------------------------------------------
   // Public API + bootstrap.
   // ----------------------------------------------------------------
   window.__claudosaurus = {
-    version: "0.9.1",
+    version: VERSION,
     config: CONFIG,
     DinoGame: DinoGame,
     clear: function () { removeGames(true); },
@@ -1189,11 +1466,33 @@
       return CONFIG.theme;
     },
     setScanlines: function (on) { applyOptions({ scanlines: !!on }); return CONFIG.scanlines; },
+    setSound: function (on) { applyOptions({ sound: !!on }); return CONFIG.sound; },
+    setDayNight: function (on) { applyOptions({ dayNightCycle: !!on }); return CONFIG.dayNightCycle; },
+    // Lifetime stats: read the running totals, or wipe them.
+    stats: function () { return readStats(); },
+    resetStats: function () { try { localStorage.removeItem(STATS_KEY); } catch (e) { } return readStats(); },
+    // Detection self-heal: override the spinner/busy selectors if an extension
+    // update ever breaks detection (persists). resetSelectors() restores defaults.
+    setSelectors: function (o) {
+      o = o || {};
+      if (o.spinnerRow) CONFIG.spinnerRowSelector = String(o.spinnerRow);
+      if (o.busyContent) CONFIG.busyContentSelector = String(o.busyContent);
+      try { localStorage.setItem(SELECTORS_KEY, JSON.stringify({ spinnerRowSelector: CONFIG.spinnerRowSelector, busyContentSelector: CONFIG.busyContentSelector })); } catch (e) { }
+      scheduleEvaluate();
+      return { spinnerRow: CONFIG.spinnerRowSelector, busyContent: CONFIG.busyContentSelector };
+    },
+    resetSelectors: function () {
+      CONFIG.spinnerRowSelector = DEFAULT_SELECTORS.spinnerRowSelector;
+      CONFIG.busyContentSelector = DEFAULT_SELECTORS.busyContentSelector;
+      try { localStorage.removeItem(SELECTORS_KEY); } catch (e) { }
+      scheduleEvaluate();
+      return DEFAULT_SELECTORS;
+    },
     resetOptions: function () {
       applyOptions({
         startSpeed: 4.0, maxSpeed: 11.0, acceleration: 0.0016, gravity: 0.62, jumpVelocity: -7.6,
-        theme: "auto", scanlines: false, clouds: true,
-        enableBirds: true, birdMinScore: 150
+        theme: "auto", scanlines: false, clouds: true, dayNightCycle: false, cycleScore: 500,
+        sound: false, enableBirds: true, birdMinScore: 150
       });
       return CONFIG;
     },
@@ -1237,6 +1536,7 @@
   function boot() {
     try {
       loadOptions(); // restore the user's saved difficulty/theme tweaks
+      loadSelectors(); // restore any user selector overrides (drift self-heal)
       console.log("[claudosaurus] v" + window.__claudosaurus.version + " by @animeshlego5 running @ " + location.href);
       startObserver();
       if (/[?&]claudeRexForce=1/.test(location.search)) window.__claudosaurus.spawnTest();

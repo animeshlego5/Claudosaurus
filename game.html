@@ -74,9 +74,9 @@
   <h1>🦖 Claudosaurus — test harness</h1>
   <p>
     Press <b>Spawn spinner</b> to simulate Claude working. The dino game replaces
-    the spinner inline. Jump with <b>Space</b> / <b>↑</b> / click. Press <b>?</b>
-    in-game for the settings cheatsheet. Remove the spinner to confirm the game
-    self-destructs.
+    the spinner inline. Jump with <b>Space</b> / <b>↑</b> / click. Click
+    <b>⚙ settings</b> (top-left of the game) to open the settings panel. Remove
+    the spinner to confirm the game self-destructs.
   </p>
   <div class="bar">
     <button id="spawn">Spawn spinner</button>
@@ -96,6 +96,8 @@
     <button data-theme="night">Night</button>
     <button data-theme="auto">Auto</button>
     <button id="scanlines">Scanlines</button>
+    <button id="sound">Sound</button>
+    <button id="daynight">Day/Night cycle</button>
   </div>
 
   <div id="panel">
@@ -196,6 +198,22 @@
         scan = !scan;
         window.__claudosaurus.setScanlines(scan);
         scanlinesBtn.classList.toggle("active", scan);
+      });
+      var snd = false;
+      var soundBtn = document.getElementById("sound");
+      soundBtn.addEventListener("click", function () {
+        snd = !snd;
+        window.__claudosaurus.setSound(snd);
+        soundBtn.classList.toggle("active", snd);
+      });
+      var dn = false;
+      var dnBtn = document.getElementById("daynight");
+      dnBtn.addEventListener("click", function () {
+        dn = !dn;
+        window.__claudosaurus.setDayNight(dn);
+        // A short cycle so the flip is visible quickly while testing.
+        window.__claudosaurus.setOptions({ cycleScore: dn ? 80 : 500 });
+        dnBtn.classList.toggle("active", dn);
       });
 
       // Mark the defaults as active on load.

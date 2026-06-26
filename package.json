@@ -1,6 +1,6 @@
 {
   "name": "claudosaurus",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "description": "Turn the Claude Code 'thinking' spinner into a playable, monochrome Chrome-style dinosaur game.",
   "author": "Animesh Gosain (https://github.com/animeshlego5)",
   "bin": {
@@ -15,9 +15,12 @@
     "game.html",
     "hang-server.js",
     "lib/",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "scripts": {
+    "test": "node --test",
     "patch": "node cli.js install",
     "patch:all": "node cli.js install --all",
     "patch:dry": "node cli.js install --dry-run",
