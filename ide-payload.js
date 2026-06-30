@@ -76,16 +76,20 @@
     // tool calls) the game freezes instead of tearing down, and resumes the
     // same run when work continues.
     pauseWhenUnfocused: true, // freeze while the webview lacks focus (popups/modals)
-    pauseSelector: "",        // optional CSS selector: hold paused while it's on screen
+    // Hold the frozen game open while a real permission prompt is up. The
+    // extension renders approval UI in a dedicated container (class
+    // `permissionsContainer_*`), mounted ONLY when a request is pending — so
+    // keying on it is exact, with no false-positives on idle input controls.
+    pauseSelector: '[class*="permissionsContainer"]',
     endGraceMs: 1200,         // keep the frozen game this long after "done" before it vanishes
     resumeWindowMs: 180000,   // a run that restarts within this window resumes its score
 
-    // Robust permission detection. When the busy marker clears we can't tell a
-    // finished turn from a permission prompt by the marker alone, and the real
-    // extension ships no pauseSelector. So we also sniff for an approval prompt:
-    // a visible button near the spinner row whose label reads like yes/no/allow.
-    // While one is up the game HOLDS (frozen, score kept) instead of ending.
-    detectPermissionButtons: true, // heuristic: treat approve/deny buttons as "paused, not done"
+    // Legacy fallback heuristic: sniff for an approve/deny *button* near the
+    // spinner row by label. OFF by default now that `pauseSelector` keys on the
+    // real permissionsContainer — the fuzzy scan false-positives on the 2026
+    // input UI (send/mode buttons read like "run"/"always"/"cancel"), which
+    // stranded the frozen game for up to maxHoldMs after every turn.
+    detectPermissionButtons: false, // heuristic: treat approve/deny buttons as "paused, not done"
     promptScopeSelector: "",       // optional: limit the button scan to this container ("" = auto)
     pauseTextPattern: "",          // optional regex (string) on nearby text — opt-in, can false-positive
     maxHoldMs: 300000,             // safety cap: stop holding a frozen game after this with no resume
@@ -104,11 +108,10 @@
     // sprites), "night" forces a dark scene (dark bg, light sprites), and "auto"
     // (default) simply matches the editor — light editor → light scene, dark
     // editor → dark scene — by sampling the editor's own fg/bg.
-    theme: "auto",         // "day" (light) | "night" (dark) | "auto" (match editor)
+    theme: "auto",         // "day" (light) | "night" (dark) | "auto" (match editor) | "cycle" (flip every cycleScore pts)
     scanlines: false,      // CRT scanline overlay
     clouds: true,          // parallax background clouds
-    dayNightCycle: false,  // invert the scene every `cycleScore` points (Chrome-style)
-    cycleScore: 500,       // points between day↔night flips when dayNightCycle is on
+    cycleScore: 500,       // points between day↔night flips when theme is "cycle"
 
     // Feedback. Sound is OFF by default (a webview beeping mid-task is rude);
     // it's a one-tap toggle in the settings panel for those who want it.
@@ -656,8 +659,9 @@
     var DAY = { ink: darkInk, fill: lightInk };   // dark sprites on a light field
     var NIGHT = { ink: lightInk, fill: darkInk };  // light sprites on a dark field
     function sceneColors() {
-      // Chrome-style auto flip: alternate day/night every `cycleScore` points.
-      if (CONFIG.dayNightCycle && state === STATE.RUNNING) {
+      // Chrome-style flip: when theme is "cycle", alternate day/night every
+      // `cycleScore` points. Otherwise the theme is absolute.
+      if (CONFIG.theme === "cycle" && state === STATE.RUNNING) {
         var phase = Math.floor(score / Math.max(1, CONFIG.cycleScore)) % 2;
         return phase ? NIGHT : DAY;
       }
@@ -691,6 +695,7 @@
     }
 
     var modal = null;
+    var advancedOpen = false; // disclosure state for the Advanced section (persists across rebuilds)
     function buildSettingsModal() {
       var speedName = presetName(SPEED_PRESETS);
       var jumpName = presetName(JUMP_PRESETS);
@@ -736,22 +741,38 @@
           '</div>';
       }
 
-      var themeRow = selectRow("cr-theme", "Theme", [["auto", "Auto"], ["day", "Day"], ["night", "Night"]], CONFIG.theme);
+      var themeRow = selectRow("cr-theme", "Theme", [["auto", "Auto"], ["day", "Day"], ["night", "Night"], ["cycle", "Cycle"]], CONFIG.theme);
       var speedRow = selectRow("cr-speed", "Speed", [["slow", "Slow"], ["normal", "Normal"], ["fast", "Fast"], ["custom", "Custom"]], speedName);
       var jumpRow = selectRow("cr-jump", "Jump", [["floaty", "Floaty"], ["normal", "Normal"], ["snappy", "Snappy"], ["custom", "Custom"]], jumpName);
 
-      var lookToggles = toggleHtml("cr-scanlines", "Scanlines", CONFIG.scanlines) +
-        toggleHtml("cr-clouds", "Clouds", CONFIG.clouds) +
-        toggleHtml("cr-daynight", "Day/Night", CONFIG.dayNightCycle);
+      // Main panel = the everyday knobs an amateur reaches for: theme, the
+      // Speed/Jump presets, and a couple of simple toggles.
+      var lookToggles = toggleHtml("cr-clouds", "Clouds", CONFIG.clouds);
       var feelToggles = toggleHtml("cr-sound", "Sound", CONFIG.sound) +
-        toggleHtml("cr-birds", "Birds", CONFIG.enableBirds) +
         toggleHtml("cr-alwayson", "Free play", CONFIG.alwaysOn);
+
+      // Advanced panel = power-user controls, tucked behind a disclosure so the
+      // default view stays uncluttered: birds, the CRT overlay, and the raw
+      // fine-tune sliders the Speed/Jump presets otherwise bundle.
+      var advToggles = toggleHtml("cr-birds", "Birds", CONFIG.enableBirds) +
+        toggleHtml("cr-scanlines", "Scanlines", CONFIG.scanlines);
 
       var colWrap = "display:grid; grid-template-columns:" + (wide ? "1fr 1fr" : "1fr") + "; column-gap:22px; row-gap:3px;";
 
       var slidersHtml = "";
       for (var s = 0; s < TUNABLES.length; s++) slidersHtml += sliderHtml(TUNABLES[s]);
       var slidersWrap = '<div style="display:grid; grid-template-columns:' + (wide ? "1fr 1fr" : "1fr") + '; column-gap:18px; row-gap:5px;">' + slidersHtml + '</div>';
+
+      // Collapsible Advanced disclosure. The caret + body visibility track
+      // `advancedOpen` so the chosen state survives a modal rebuild (resize).
+      var advHeader = '<div id="cr-adv-toggle" style="' + subheadStyle + ' cursor:pointer; display:flex; align-items:center; gap:5px; user-select:none;">' +
+        '<span id="cr-adv-caret">' + (advancedOpen ? "▾" : "▸") + '</span><span>Advanced</span></div>';
+      var advBody = '<div id="cr-adv-body" style="display:' + (advancedOpen ? "block" : "none") + ';">' +
+        '<div style="' + colWrap + '">' + advToggles + '</div>' +
+        '<div style="' + subheadStyle + '">Fine-tune</div>' +
+        slidersWrap +
+        '</div>';
+      var advancedHtml = advHeader + advBody;
 
       var st = readStats();
       var statsLine = '<div style="opacity:0.45; text-align:center; font-size:9.5px; padding-top:1px;">' +
@@ -786,8 +807,7 @@
         '<div style="' + colWrap + '">' + themeRow + lookToggles + '</div>' +
         '<div style="' + subheadStyle + '">Feel</div>' +
         '<div style="' + colWrap + '">' + speedRow + jumpRow + feelToggles + '</div>' +
-        '<div style="' + subheadStyle + '">Fine-tune</div>' +
-        slidersWrap +
+        advancedHtml +
         statsLine +
         '<div style="display:flex; gap:8px; padding-top:3px;">' +
         '<button id="cr-reset" style="' + btnBase + '">Reset</button>' +
@@ -833,10 +853,37 @@
       }
       wireToggle('cr-scanlines', function () { return CONFIG.scanlines; }, function (on) { window.__claudosaurus.setScanlines(on); });
       wireToggle('cr-clouds', function () { return CONFIG.clouds; }, function (on) { window.__claudosaurus.setOptions({ clouds: on }); });
-      wireToggle('cr-daynight', function () { return CONFIG.dayNightCycle; }, function (on) { window.__claudosaurus.setOptions({ dayNightCycle: on }); });
       wireToggle('cr-sound', function () { return CONFIG.sound; }, function (on) { window.__claudosaurus.setSound(on); });
-      wireToggle('cr-birds', function () { return CONFIG.enableBirds; }, function (on) { window.__claudosaurus.setOptions({ enableBirds: on }); });
       wireToggle('cr-alwayson', function () { return CONFIG.alwaysOn; }, function (on) { window.__claudosaurus.setAlwaysOn(on); });
+
+      // Birds is wired explicitly (not via wireToggle) so it can grey out the
+      // "Birds at" slider when birds are off — that slider does nothing then.
+      function syncBirdSlider() {
+        var bs = div.querySelector('#cr-birdMinScore');
+        if (!bs) return;
+        bs.disabled = !CONFIG.enableBirds;
+        bs.style.opacity = CONFIG.enableBirds ? '' : '0.4';
+      }
+      var birdsEl = div.querySelector('#cr-birds');
+      if (birdsEl) birdsEl.onclick = function () {
+        var on = !CONFIG.enableBirds;
+        window.__claudosaurus.setOptions({ enableBirds: on });
+        birdsEl.style.background = on ? '#5a7d5a' : '#333';
+        birdsEl.querySelector('span').style.transform = on ? 'translateX(12px)' : 'translateX(0)';
+        syncBirdSlider();
+      };
+      syncBirdSlider();
+
+      // Advanced disclosure: flip visibility + caret in place (no rebuild — the
+      // hidden controls are already wired).
+      var advToggleEl = div.querySelector('#cr-adv-toggle');
+      var advBodyEl = div.querySelector('#cr-adv-body');
+      var advCaretEl = div.querySelector('#cr-adv-caret');
+      if (advToggleEl) advToggleEl.onclick = function () {
+        advancedOpen = !advancedOpen;
+        if (advBodyEl) advBodyEl.style.display = advancedOpen ? 'block' : 'none';
+        if (advCaretEl) advCaretEl.textContent = advancedOpen ? '▾' : '▸';
+      };
 
       // Sliders: live-apply on input; leaving a preset flips its select to Custom.
       for (var si = 0; si < TUNABLES.length; si++) {
@@ -1247,7 +1294,25 @@
     notBusySince = 0;
   }
 
+  // Safety net: tear down any host that isn't the one we're actively tracking.
+  // A chat-panel re-render can detach our `active` bookkeeping from a canvas
+  // that's still in the DOM — the spinner row gets renamed/rebuilt with our
+  // host still nested inside it — leaving a game that animates forever after
+  // the turn ends. `active.host` is always preserved; everything else is an
+  // orphan and gets reaped. (Diagnosed via: spinnerRow matches 0, active false,
+  // yet a game still on screen.)
+  function reapOrphanHosts() {
+    var hosts = document.querySelectorAll(".claudosaurus-host");
+    for (var i = 0; i < hosts.length; i++) {
+      var h = hosts[i];
+      if (active && h === active.host) continue;
+      if (h.__game) { try { h.__game.teardown(); } catch (e) { } }
+      if (h.parentNode) h.parentNode.removeChild(h);
+    }
+  }
+
   function evaluate() {
+    reapOrphanHosts();
     if (CONFIG.alwaysOn) {
       if (active) {
         if (active.row && !document.contains(active.row)) { saveSnapshot(); endGame(); return; }
@@ -1375,7 +1440,7 @@
   // Only these keys are persisted (everything user-tunable; not selectors/internals).
   var PERSIST_KEYS = [
     "startSpeed", "maxSpeed", "acceleration", "gravity", "jumpVelocity",
-    "theme", "scanlines", "clouds", "dayNightCycle", "cycleScore",
+    "theme", "scanlines", "clouds", "cycleScore",
     "sound", "enableBirds", "birdMinScore"
   ];
   var OPTIONS_KEY = "claudeRexOptions";
@@ -1389,6 +1454,8 @@
         var k = PERSIST_KEYS[i];
         if (o && o.hasOwnProperty(k)) CONFIG[k] = o[k];
       }
+      // Migrate the retired dayNightCycle flag: it's now theme "cycle".
+      if (o && o.dayNightCycle && (!o.theme || o.theme === "auto")) CONFIG.theme = "cycle";
     } catch (e) { }
   }
   function saveOptions() {
@@ -1461,13 +1528,15 @@
       if (JUMP_PRESETS[name]) applyOptions(JUMP_PRESETS[name]);
       return name;
     },
-    setTheme: function (name) { // "day" | "night" | "auto"
-      applyOptions({ theme: name === "night" || name === "auto" ? name : "day" });
+    setTheme: function (name) { // "day" | "night" | "auto" | "cycle"
+      var ok = { day: 1, night: 1, auto: 1, cycle: 1 };
+      applyOptions({ theme: ok[name] ? name : "auto" });
       return CONFIG.theme;
     },
     setScanlines: function (on) { applyOptions({ scanlines: !!on }); return CONFIG.scanlines; },
     setSound: function (on) { applyOptions({ sound: !!on }); return CONFIG.sound; },
-    setDayNight: function (on) { applyOptions({ dayNightCycle: !!on }); return CONFIG.dayNightCycle; },
+    // Back-compat shim: the old day/night cycle is now the "cycle" theme.
+    setDayNight: function (on) { applyOptions({ theme: on ? "cycle" : "auto" }); return CONFIG.theme === "cycle"; },
     // Lifetime stats: read the running totals, or wipe them.
     stats: function () { return readStats(); },
     resetStats: function () { try { localStorage.removeItem(STATS_KEY); } catch (e) { } return readStats(); },
@@ -1491,7 +1560,7 @@
     resetOptions: function () {
       applyOptions({
         startSpeed: 4.0, maxSpeed: 11.0, acceleration: 0.0016, gravity: 0.62, jumpVelocity: -7.6,
-        theme: "auto", scanlines: false, clouds: true, dayNightCycle: false, cycleScore: 500,
+        theme: "auto", scanlines: false, clouds: true, cycleScore: 500,
         sound: false, enableBirds: true, birdMinScore: 150
       });
       return CONFIG;
