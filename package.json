@@ -1,0 +1,56 @@
+{
+  "name": "claudosaurus",
+  "version": "0.10.0",
+  "description": "Turn the Claude Code 'thinking' spinner into a playable, monochrome Chrome-style dinosaur game.",
+  "author": "Animesh Gosain (https://github.com/animeshlego5)",
+  "bin": {
+    "claudosaurus": "cli.js"
+  },
+  "main": "lib/patch.js",
+  "files": [
+    "cli.js",
+    "install.js",
+    "uninstall.js",
+    "ide-payload.js",
+    "game.html",
+    "hang-server.js",
+    "lib/",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "patch": "node cli.js install",
+    "patch:all": "node cli.js install --all",
+    "patch:dry": "node cli.js install --dry-run",
+    "unpatch": "node cli.js uninstall",
+    "unpatch:all": "node cli.js uninstall --all"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "anthropic",
+    "antigravity",
+    "vscode",
+    "cursor",
+    "dino",
+    "dinosaur",
+    "game",
+    "spinner",
+    "loading"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/animeshlego5/Claudosaurus.git"
+  },
+  "bugs": {
+    "url": "https://github.com/animeshlego5/Claudosaurus/issues"
+  },
+  "homepage": "https://github.com/animeshlego5/Claudosaurus#readme",
+  "dependencies": {}
+}

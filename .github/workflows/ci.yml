@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18, 20, 22]
+    name: test (node ${{ matrix.node }})
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      # No dependencies to install — zero-dep package.
+      - name: Syntax-check all JS
+        run: |
+          for f in cli.js install.js uninstall.js hang-server.js ide-payload.js lib/*.js tests/*.js; do
+            node --check "$f"
+          done
+      - name: Run tests
+        run: npm test

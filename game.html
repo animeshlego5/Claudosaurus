@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<!--
+  Claudosaurus — standalone test harness
+  ------------------------------------------------------------------
+  Open this file in any browser to develop and play the dino game with
+  ZERO cost and ZERO API tokens. It loads the exact same ide-payload.js
+  that gets injected into the Claude Code webview, and simulates the
+  "Claude is working" spinner row so the hijack path is exercised too.
+
+  Buttons:
+    Spawn spinner   -> injects a fake .spinnerRow_TEST (triggers the game)
+    Remove spinner  -> removes it (the game should self-destruct)
+
+  This mimics the editor's dark theme so the monochrome look matches.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Claudosaurus · test harness</title>
+  <style>
+    :root {
+      /* Stand-ins for the VS Code theme variables the payload reads. */
+      --vscode-editor-foreground: #e6e6e6;
+      --vscode-editor-background: #1e1e1e;
+      --app-claude-orange: #ea580c;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--vscode-editor-background);
+      color: var(--vscode-editor-foreground);
+      font-family: ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      padding: 32px 16px;
+      box-sizing: border-box;
+    }
+    h1 { font-size: 16px; font-weight: 600; opacity: 0.85; margin: 0; }
+    p  { font-size: 12px; opacity: 0.6; max-width: 460px; text-align: center; line-height: 1.5; }
+    .bar { display: flex; gap: 8px; }
+    button {
+      background: transparent;
+      color: var(--vscode-editor-foreground);
+      border: 1px solid currentColor;
+      border-radius: 4px;
+      padding: 6px 12px;
+      font: inherit;
+      font-size: 12px;
+      cursor: pointer;
+      opacity: 0.5;
+    }
+    button:hover { opacity: 0.85; }
+    button.active {
+      opacity: 1;
+      background: rgba(230, 230, 230, 0.12);
+      box-shadow: inset 0 0 0 1px currentColor;
+    }
+    /* The fake chat panel that the spinner row lives in. */
+    #panel {
+      width: 100%;
+      max-width: 460px;
+      border: 1px solid #444;
+      border-radius: 6px;
+      padding: 12px;
+      min-height: 60px;
+      box-sizing: border-box;
+    }
+    .msg { font-size: 13px; opacity: 0.7; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <h1>🦖 Claudosaurus — test harness</h1>
+  <p>
+    Press <b>Spawn spinner</b> to simulate Claude working. The dino game replaces
+    the spinner inline. Jump with <b>Space</b> / <b>↑</b> / click. Click
+    <b>⚙ settings</b> (top-left of the game) to open the settings panel. Remove
+    the spinner to confirm the game self-destructs.
+  </p>
+  <div class="bar">
+    <button id="spawn">Spawn spinner</button>
+    <button id="remove">Remove spinner</button>
+    <button id="permission">Permission prompt (pause)</button>
+    <button id="resolve">Resolve (resume)</button>
+    <button id="birds">Birds now</button>
+  </div>
+  <div class="bar">
+    <button data-speed="slow">Speed: slow</button>
+    <button data-speed="normal">normal</button>
+    <button data-speed="fast">fast</button>
+    <button data-jump="floaty">Jump: floaty</button>
+    <button data-jump="normal">normal</button>
+    <button data-jump="snappy">snappy</button>
+    <button data-theme="day">Day</button>
+    <button data-theme="night">Night</button>
+    <button data-theme="auto">Auto</button>
+    <button id="scanlines">Scanlines</button>
+    <button id="sound">Sound</button>
+    <button id="daynight">Day/Night cycle</button>
+  </div>
+
+  <div id="panel">
+    <div class="msg">&gt; Pretend Claude is thinking…</div>
+    <!-- Spinner rows get injected here by the buttons. -->
+  </div>
+
+  <!-- Load the real payload. -->
+  <script src="./ide-payload.js"></script>
+  <script>
+    (function () {
+      var panel = document.getElementById("panel");
+      var current = null;
+
+      function makeBusyDot() {
+        var dot = document.createElement("div");
+        dot.className = "spinner_HARNESS busyDot";
+        // data-permission-mode is the marker the payload reads as "busy".
+        dot.setAttribute("data-permission-mode", "default");
+        dot.textContent = "● working…";
+        return dot;
+      }
+
+      document.getElementById("spawn").addEventListener("click", function () {
+        if (current && document.contains(current)) return;
+        // Build a row that matches the real selector ([class*="spinnerRow"]).
+        var row = document.createElement("div");
+        row.className = "spinnerRow_HARNESS";
+        row.style.cssText = "display:flex;align-items:center;min-height:1.85em;margin-top:4px;";
+        row.appendChild(makeBusyDot());
+        panel.appendChild(row);
+        // The payload's MutationObserver will detect and hijack it.
+        current = row;
+      });
+
+      document.getElementById("remove").addEventListener("click", function () {
+        if (current && current.parentNode) current.parentNode.removeChild(current);
+        current = null;
+      });
+
+      // Simulate Claude pausing for a permission prompt: clear the busy marker
+      // (so the row is no longer "busy") and show a prompt the payload holds on.
+      document.getElementById("permission").addEventListener("click", function () {
+        if (!current) return;
+        window.__claudosaurus.config.pauseSelector = ".harness-perm";
+        var dot = current.querySelector(".busyDot");
+        if (dot) dot.parentNode.removeChild(dot);
+        if (!panel.querySelector(".harness-perm")) {
+          var p = document.createElement("div");
+          p.className = "harness-perm";
+          p.style.cssText = "font-size:12px;opacity:.8;margin-top:6px;";
+          p.textContent = "Allow this action? [y/n] — game should be frozen, score kept";
+          panel.appendChild(p);
+        }
+      });
+
+      // Resolve the prompt: remove it and restore the busy marker → resume.
+      document.getElementById("resolve").addEventListener("click", function () {
+        var p = panel.querySelector(".harness-perm");
+        if (p) p.parentNode.removeChild(p);
+        if (current && !current.querySelector(".busyDot")) current.appendChild(makeBusyDot());
+      });
+
+      // Drop the bird threshold so pterodactyls appear right away for testing.
+      document.getElementById("birds").addEventListener("click", function () {
+        window.__claudosaurus.config.birdMinScore = 0;
+      });
+
+      // Track which button is active within a group.
+      function setActive(attr, value) {
+        document.querySelectorAll("[data-" + attr + "]").forEach(function (b) {
+          b.classList.toggle("active", b.dataset[attr] === value);
+        });
+      }
+
+      // Option presets — exercise the same public API users would call.
+      document.querySelectorAll("[data-speed]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          window.__claudosaurus.setSpeed(b.dataset.speed);
+          setActive("speed", b.dataset.speed);
+        });
+      });
+      document.querySelectorAll("[data-jump]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          window.__claudosaurus.setJump(b.dataset.jump);
+          setActive("jump", b.dataset.jump);
+        });
+      });
+      document.querySelectorAll("[data-theme]").forEach(function (b) {
+        b.addEventListener("click", function () {
+          window.__claudosaurus.setTheme(b.dataset.theme);
+          setActive("theme", b.dataset.theme);
+        });
+      });
+      var scan = false;
+      var scanlinesBtn = document.getElementById("scanlines");
+      scanlinesBtn.addEventListener("click", function () {
+        scan = !scan;
+        window.__claudosaurus.setScanlines(scan);
+        scanlinesBtn.classList.toggle("active", scan);
+      });
+      var snd = false;
+      var soundBtn = document.getElementById("sound");
+      soundBtn.addEventListener("click", function () {
+        snd = !snd;
+        window.__claudosaurus.setSound(snd);
+        soundBtn.classList.toggle("active", snd);
+      });
+      var dn = false;
+      var dnBtn = document.getElementById("daynight");
+      dnBtn.addEventListener("click", function () {
+        dn = !dn;
+        window.__claudosaurus.setDayNight(dn);
+        // A short cycle so the flip is visible quickly while testing.
+        window.__claudosaurus.setOptions({ cycleScore: dn ? 80 : 500 });
+        dnBtn.classList.toggle("active", dn);
+      });
+
+      // Mark the defaults as active on load.
+      setActive("speed", "normal");
+      setActive("jump", "normal");
+      setActive("theme", "auto");
+    })();
+  </script>
+</body>
+</html>
